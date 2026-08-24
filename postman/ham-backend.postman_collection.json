@@ -1,0 +1,2093 @@
+{
+  "info": {
+    "name": "ham-backend",
+    "description": "HAM Job & Worker Welfare Platform API (`/api/v1`).\n\n## Import\n1. Postman → Import → `ham-backend.postman_collection.json`\n2. Optional: import `ham-backend.postman_environment.json` and select it\n\n## First run\n1. Confirm `GET /health` and `GET /ready`.\n2. Register employee (unique E.164 phone). Response is PENDING_PHONE — **no tokens**. A second register with the same phone is 409 CONFLICT; the first row is kept.\n3. OTP request with purpose `REGISTER`, copy the 6-digit code from the server `otp.mock` debug log into `otpCode` (set LOG_LEVEL=debug if you do not see it).\n4. OTP verify purpose `REGISTER` → account becomes ACTIVE and tokens are saved.\n5. After that, Login with phone+password works. Login before OTP verify returns 401 INVALID_CREDENTIALS.\n6. Repeat 2–5 for employer (purpose REGISTER, then Login employer).\n7. Catalog → Skills then Districts → Cities → Areas to fill ids.\n8. Admin routes need an existing ADMIN/SUPER_ADMIN (`SEED_DEV_ADMIN`).\n\nDo not put JWT secrets or DATABASE_URL in this collection. Placeholders only.\nSwagger UI: {{baseUrl}}/docs",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
+      "key": "refreshToken",
+      "value": ""
+    },
+    {
+      "key": "employeeAccessToken",
+      "value": ""
+    },
+    {
+      "key": "employeeRefreshToken",
+      "value": ""
+    },
+    {
+      "key": "employerAccessToken",
+      "value": ""
+    },
+    {
+      "key": "employerRefreshToken",
+      "value": ""
+    },
+    {
+      "key": "adminAccessToken",
+      "value": ""
+    },
+    {
+      "key": "adminRefreshToken",
+      "value": ""
+    },
+    {
+      "key": "employeePhone",
+      "value": "+919876543210"
+    },
+    {
+      "key": "employerPhone",
+      "value": "+919876543211"
+    },
+    {
+      "key": "adminPhone",
+      "value": "+919876543200"
+    },
+    {
+      "key": "password",
+      "value": "CorrectHorse1"
+    },
+    {
+      "key": "otpCode",
+      "value": ""
+    },
+    {
+      "key": "userId",
+      "value": ""
+    },
+    {
+      "key": "employeeUserId",
+      "value": ""
+    },
+    {
+      "key": "employerUserId",
+      "value": ""
+    },
+    {
+      "key": "adminUserId",
+      "value": ""
+    },
+    {
+      "key": "districtId",
+      "value": ""
+    },
+    {
+      "key": "cityId",
+      "value": ""
+    },
+    {
+      "key": "areaId",
+      "value": ""
+    },
+    {
+      "key": "skillId",
+      "value": ""
+    },
+    {
+      "key": "skillCategoryId",
+      "value": ""
+    },
+    {
+      "key": "jobId",
+      "value": ""
+    },
+    {
+      "key": "applicationId",
+      "value": ""
+    },
+    {
+      "key": "fileId",
+      "value": ""
+    },
+    {
+      "key": "verificationId",
+      "value": ""
+    },
+    {
+      "key": "paymentId",
+      "value": ""
+    },
+    {
+      "key": "legalCategoryId",
+      "value": ""
+    },
+    {
+      "key": "legalProviderId",
+      "value": ""
+    },
+    {
+      "key": "termsVersion",
+      "value": "ham-membership-2026-08"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET /health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health",
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "GET /ready",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/ready",
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "GET /docs (Swagger UI)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/docs",
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register employee",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/register",
+            "description": "Creates PENDING_PHONE. Does not issue tokens. Same phone again → 409 CONFLICT.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{employeePhone}}\",\n  \"role\": \"EMPLOYEE\",\n  \"preferredLanguage\": \"ta\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "OTP request (REGISTER)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/otp/request",
+            "description": "purpose REGISTER only works while PENDING_PHONE. Copy otp from log `otp.mock` into otpCode.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{employeePhone}}\",\n  \"purpose\": \"REGISTER\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "OTP verify (REGISTER)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/otp/verify",
+            "description": "Activates the account and returns tokens. Required before password login.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{employeePhone}}\",\n  \"purpose\": \"REGISTER\",\n  \"code\": \"{{otpCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json && json.data && json.data.accessToken) {",
+                  "  const role = json.data.user && json.data.user.role;",
+                  "  pm.collectionVariables.set('accessToken', json.data.accessToken);",
+                  "  pm.collectionVariables.set('refreshToken', json.data.refreshToken);",
+                  "  pm.collectionVariables.set('userId', json.data.user.id);",
+                  "  if (role === 'EMPLOYEE') {",
+                  "    pm.collectionVariables.set('employeeAccessToken', json.data.accessToken);",
+                  "    pm.collectionVariables.set('employeeRefreshToken', json.data.refreshToken);",
+                  "    pm.collectionVariables.set('employeeUserId', json.data.user.id);",
+                  "  }",
+                  "  if (role === 'EMPLOYER') {",
+                  "    pm.collectionVariables.set('employerAccessToken', json.data.accessToken);",
+                  "    pm.collectionVariables.set('employerRefreshToken', json.data.refreshToken);",
+                  "    pm.collectionVariables.set('employerUserId', json.data.user.id);",
+                  "  }",
+                  "  if (role === 'ADMIN' || role === 'SUPER_ADMIN') {",
+                  "    pm.collectionVariables.set('adminAccessToken', json.data.accessToken);",
+                  "    pm.collectionVariables.set('adminRefreshToken', json.data.refreshToken);",
+                  "    pm.collectionVariables.set('adminUserId', json.data.user.id);",
+                  "  }",
+                  "}",
+                  ""
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register employer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/register",
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{employerPhone}}\",\n  \"role\": \"EMPLOYER\",\n  \"preferredLanguage\": \"en\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "OTP request employer (REGISTER)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/otp/request",
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{employerPhone}}\",\n  \"purpose\": \"REGISTER\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "OTP verify employer (REGISTER)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/otp/verify",
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{employerPhone}}\",\n  \"purpose\": \"REGISTER\",\n  \"code\": \"{{otpCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json && json.data && json.data.accessToken) {",
+                  "  const role = json.data.user && json.data.user.role;",
+                  "  pm.collectionVariables.set('accessToken', json.data.accessToken);",
+                  "  pm.collectionVariables.set('refreshToken', json.data.refreshToken);",
+                  "  pm.collectionVariables.set('userId', json.data.user.id);",
+                  "  if (role === 'EMPLOYEE') {",
+                  "    pm.collectionVariables.set('employeeAccessToken', json.data.accessToken);",
+                  "    pm.collectionVariables.set('employeeRefreshToken', json.data.refreshToken);",
+                  "    pm.collectionVariables.set('employeeUserId', json.data.user.id);",
+                  "  }",
+                  "  if (role === 'EMPLOYER') {",
+                  "    pm.collectionVariables.set('employerAccessToken', json.data.accessToken);",
+                  "    pm.collectionVariables.set('employerRefreshToken', json.data.refreshToken);",
+                  "    pm.collectionVariables.set('employerUserId', json.data.user.id);",
+                  "  }",
+                  "  if (role === 'ADMIN' || role === 'SUPER_ADMIN') {",
+                  "    pm.collectionVariables.set('adminAccessToken', json.data.accessToken);",
+                  "    pm.collectionVariables.set('adminRefreshToken', json.data.refreshToken);",
+                  "    pm.collectionVariables.set('adminUserId', json.data.user.id);",
+                  "  }",
+                  "}",
+                  ""
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login employee",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/login",
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{employeePhone}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json && json.data && json.data.accessToken) {",
+                  "  const role = json.data.user && json.data.user.role;",
+                  "  pm.collectionVariables.set('accessToken', json.data.accessToken);",
+                  "  pm.collectionVariables.set('refreshToken', json.data.refreshToken);",
+                  "  pm.collectionVariables.set('userId', json.data.user.id);",
+                  "  if (role === 'EMPLOYEE') {",
+                  "    pm.collectionVariables.set('employeeAccessToken', json.data.accessToken);",
+                  "    pm.collectionVariables.set('employeeRefreshToken', json.data.refreshToken);",
+                  "    pm.collectionVariables.set('employeeUserId', json.data.user.id);",
+                  "  }",
+                  "  if (role === 'EMPLOYER') {",
+                  "    pm.collectionVariables.set('employerAccessToken', json.data.accessToken);",
+                  "    pm.collectionVariables.set('employerRefreshToken', json.data.refreshToken);",
+                  "    pm.collectionVariables.set('employerUserId', json.data.user.id);",
+                  "  }",
+                  "  if (role === 'ADMIN' || role === 'SUPER_ADMIN') {",
+                  "    pm.collectionVariables.set('adminAccessToken', json.data.accessToken);",
+                  "    pm.collectionVariables.set('adminRefreshToken', json.data.refreshToken);",
+                  "    pm.collectionVariables.set('adminUserId', json.data.user.id);",
+                  "  }",
+                  "}",
+                  ""
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login employer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/login",
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{employerPhone}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json && json.data && json.data.accessToken) {",
+                  "  const role = json.data.user && json.data.user.role;",
+                  "  pm.collectionVariables.set('accessToken', json.data.accessToken);",
+                  "  pm.collectionVariables.set('refreshToken', json.data.refreshToken);",
+                  "  pm.collectionVariables.set('userId', json.data.user.id);",
+                  "  if (role === 'EMPLOYEE') {",
+                  "    pm.collectionVariables.set('employeeAccessToken', json.data.accessToken);",
+                  "    pm.collectionVariables.set('employeeRefreshToken', json.data.refreshToken);",
+                  "    pm.collectionVariables.set('employeeUserId', json.data.user.id);",
+                  "  }",
+                  "  if (role === 'EMPLOYER') {",
+                  "    pm.collectionVariables.set('employerAccessToken', json.data.accessToken);",
+                  "    pm.collectionVariables.set('employerRefreshToken', json.data.refreshToken);",
+                  "    pm.collectionVariables.set('employerUserId', json.data.user.id);",
+                  "  }",
+                  "  if (role === 'ADMIN' || role === 'SUPER_ADMIN') {",
+                  "    pm.collectionVariables.set('adminAccessToken', json.data.accessToken);",
+                  "    pm.collectionVariables.set('adminRefreshToken', json.data.refreshToken);",
+                  "    pm.collectionVariables.set('adminUserId', json.data.user.id);",
+                  "  }",
+                  "}",
+                  ""
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login admin",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/login",
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{adminPhone}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json && json.data && json.data.accessToken) {",
+                  "  const role = json.data.user && json.data.user.role;",
+                  "  pm.collectionVariables.set('accessToken', json.data.accessToken);",
+                  "  pm.collectionVariables.set('refreshToken', json.data.refreshToken);",
+                  "  pm.collectionVariables.set('userId', json.data.user.id);",
+                  "  if (role === 'EMPLOYEE') {",
+                  "    pm.collectionVariables.set('employeeAccessToken', json.data.accessToken);",
+                  "    pm.collectionVariables.set('employeeRefreshToken', json.data.refreshToken);",
+                  "    pm.collectionVariables.set('employeeUserId', json.data.user.id);",
+                  "  }",
+                  "  if (role === 'EMPLOYER') {",
+                  "    pm.collectionVariables.set('employerAccessToken', json.data.accessToken);",
+                  "    pm.collectionVariables.set('employerRefreshToken', json.data.refreshToken);",
+                  "    pm.collectionVariables.set('employerUserId', json.data.user.id);",
+                  "  }",
+                  "  if (role === 'ADMIN' || role === 'SUPER_ADMIN') {",
+                  "    pm.collectionVariables.set('adminAccessToken', json.data.accessToken);",
+                  "    pm.collectionVariables.set('adminRefreshToken', json.data.refreshToken);",
+                  "    pm.collectionVariables.set('adminUserId', json.data.user.id);",
+                  "  }",
+                  "}",
+                  ""
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "OTP request (LOGIN)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/otp/request",
+            "description": "Only after the account is ACTIVE. Same generic 200 body even if the phone is unknown.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{employeePhone}}\",\n  \"purpose\": \"LOGIN\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "OTP verify (LOGIN)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/otp/verify",
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{employeePhone}}\",\n  \"purpose\": \"LOGIN\",\n  \"code\": \"{{otpCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json && json.data && json.data.accessToken) {",
+                  "  const role = json.data.user && json.data.user.role;",
+                  "  pm.collectionVariables.set('accessToken', json.data.accessToken);",
+                  "  pm.collectionVariables.set('refreshToken', json.data.refreshToken);",
+                  "  pm.collectionVariables.set('userId', json.data.user.id);",
+                  "  if (role === 'EMPLOYEE') {",
+                  "    pm.collectionVariables.set('employeeAccessToken', json.data.accessToken);",
+                  "    pm.collectionVariables.set('employeeRefreshToken', json.data.refreshToken);",
+                  "    pm.collectionVariables.set('employeeUserId', json.data.user.id);",
+                  "  }",
+                  "  if (role === 'EMPLOYER') {",
+                  "    pm.collectionVariables.set('employerAccessToken', json.data.accessToken);",
+                  "    pm.collectionVariables.set('employerRefreshToken', json.data.refreshToken);",
+                  "    pm.collectionVariables.set('employerUserId', json.data.user.id);",
+                  "  }",
+                  "  if (role === 'ADMIN' || role === 'SUPER_ADMIN') {",
+                  "    pm.collectionVariables.set('adminAccessToken', json.data.accessToken);",
+                  "    pm.collectionVariables.set('adminRefreshToken', json.data.refreshToken);",
+                  "    pm.collectionVariables.set('adminUserId', json.data.user.id);",
+                  "  }",
+                  "}",
+                  ""
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Session",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/auth/session",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Refresh",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/refresh",
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json && json.data && json.data.accessToken) {",
+                  "  const role = json.data.user && json.data.user.role;",
+                  "  pm.collectionVariables.set('accessToken', json.data.accessToken);",
+                  "  pm.collectionVariables.set('refreshToken', json.data.refreshToken);",
+                  "  pm.collectionVariables.set('userId', json.data.user.id);",
+                  "  if (role === 'EMPLOYEE') {",
+                  "    pm.collectionVariables.set('employeeAccessToken', json.data.accessToken);",
+                  "    pm.collectionVariables.set('employeeRefreshToken', json.data.refreshToken);",
+                  "    pm.collectionVariables.set('employeeUserId', json.data.user.id);",
+                  "  }",
+                  "  if (role === 'EMPLOYER') {",
+                  "    pm.collectionVariables.set('employerAccessToken', json.data.accessToken);",
+                  "    pm.collectionVariables.set('employerRefreshToken', json.data.refreshToken);",
+                  "    pm.collectionVariables.set('employerUserId', json.data.user.id);",
+                  "  }",
+                  "  if (role === 'ADMIN' || role === 'SUPER_ADMIN') {",
+                  "    pm.collectionVariables.set('adminAccessToken', json.data.accessToken);",
+                  "    pm.collectionVariables.set('adminRefreshToken', json.data.refreshToken);",
+                  "    pm.collectionVariables.set('adminUserId', json.data.user.id);",
+                  "  }",
+                  "}",
+                  ""
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Set password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/password/set",
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "OTP request password reset",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/otp/request",
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{employeePhone}}\",\n  \"purpose\": \"PASSWORD_RESET\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Reset password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/password/reset",
+            "description": "resetToken comes from successful PASSWORD_RESET OTP verify.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{employeePhone}}\",\n  \"resetToken\": \"{{resetToken}}\",\n  \"newPassword\": \"CorrectHorse2\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/logout",
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\",\n  \"allDevices\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users (me)",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{accessToken}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "GET me",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/me",
+            "description": ""
+          }
+        },
+        {
+          "name": "PATCH me",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/me",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"preferredLanguage\": \"en\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Catalog",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{accessToken}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Skills",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/skills",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json && Array.isArray(json.data) && json.data[0] && json.data[0].id) {",
+                  "  pm.collectionVariables.set('skillId', json.data[0].id);",
+                  "}",
+                  ""
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Skill categories",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/skill-categories",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json && Array.isArray(json.data) && json.data[0] && json.data[0].id) {",
+                  "  pm.collectionVariables.set('skillCategoryId', json.data[0].id);",
+                  "}",
+                  ""
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Districts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/geo/districts",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json && Array.isArray(json.data) && json.data[0] && json.data[0].id) {",
+                  "  pm.collectionVariables.set('districtId', json.data[0].id);",
+                  "}",
+                  ""
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cities",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/geo/districts/{{districtId}}/cities",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json && Array.isArray(json.data) && json.data[0] && json.data[0].id) {",
+                  "  pm.collectionVariables.set('cityId', json.data[0].id);",
+                  "}",
+                  ""
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Areas",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/geo/cities/{{cityId}}/areas",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json && Array.isArray(json.data) && json.data[0] && json.data[0].id) {",
+                  "  pm.collectionVariables.set('areaId', json.data[0].id);",
+                  "}",
+                  ""
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Employee",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{employeeAccessToken}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "GET profile",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/employee/profile",
+            "description": ""
+          }
+        },
+        {
+          "name": "PATCH profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/employee/profile",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Test Employee\",\n  \"gender\": \"PREFER_NOT_TO_SAY\",\n  \"districtId\": \"{{districtId}}\",\n  \"cityId\": \"{{cityId}}\",\n  \"availabilityStatus\": \"AVAILABLE\",\n  \"bio\": \"Postman profile\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "GET skills",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/employee/skills",
+            "description": ""
+          }
+        },
+        {
+          "name": "PUT skills",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/employee/skills",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"skills\": [\n    {\n      \"skillId\": \"{{skillId}}\",\n      \"yearsExperience\": 2\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST profile image",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/employee/profile/image",
+            "description": "multipart field name is `file` (jpeg/png/webp, max 2 MiB).",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [],
+                  "description": "Select an image"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Employer org",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{employerAccessToken}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "GET profile",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/employer/profile",
+            "description": ""
+          }
+        },
+        {
+          "name": "PATCH profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/employer/profile",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Test Employer\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "PUT organization",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/employer/organization",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman Org\",\n  \"description\": \"Test organization\",\n  \"districtId\": \"{{districtId}}\",\n  \"cityId\": \"{{cityId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Worker search",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/employer/workers?page=1&limit=20",
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "Jobs (employee browse)",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{employeeAccessToken}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Feed",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/jobs?limit=20",
+            "description": ""
+          }
+        },
+        {
+          "name": "Get job",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/jobs/{{jobId}}",
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "Employer jobs",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{employerAccessToken}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Create job",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/employer/jobs",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Mason needed\",\n  \"description\": \"Postman job\",\n  \"jobType\": \"FULL_TIME\",\n  \"districtId\": \"{{districtId}}\",\n  \"cityId\": \"{{cityId}}\",\n  \"vacancies\": 1,\n  \"wageMinPaise\": 50000,\n  \"wageMaxPaise\": 80000,\n  \"wagePeriod\": \"DAY\",\n  \"skillIds\": [\n    \"{{skillId}}\"\n  ],\n  \"status\": \"DRAFT\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json && json.data && json.data.id) {",
+                  "  pm.collectionVariables.set('jobId', json.data.id);",
+                  "}",
+                  ""
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List my jobs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/employer/jobs?page=1&limit=20",
+            "description": ""
+          }
+        },
+        {
+          "name": "Get my job",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/employer/jobs/{{jobId}}",
+            "description": ""
+          }
+        },
+        {
+          "name": "Patch job",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/employer/jobs/{{jobId}}",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Mason needed (updated)\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Publish",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/employer/jobs/{{jobId}}/publish",
+            "description": ""
+          }
+        },
+        {
+          "name": "Close",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/employer/jobs/{{jobId}}/close",
+            "description": ""
+          }
+        },
+        {
+          "name": "List applicants",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/employer/jobs/{{jobId}}/applications?page=1&limit=20",
+            "description": ""
+          }
+        },
+        {
+          "name": "Patch applicant",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/employer/jobs/{{jobId}}/applications/{{applicationId}}",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"VIEWED\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Applications",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{employeeAccessToken}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Apply",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/applications",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jobId\": \"{{jobId}}\",\n  \"coverNote\": \"Interested\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json && json.data && json.data.id) {",
+                  "  pm.collectionVariables.set('applicationId', json.data.id);",
+                  "}",
+                  ""
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List mine",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/applications?page=1&limit=20",
+            "description": ""
+          }
+        },
+        {
+          "name": "Get one",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/applications/{{applicationId}}",
+            "description": ""
+          }
+        },
+        {
+          "name": "Withdraw",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/applications/{{applicationId}}/withdraw",
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "Files",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{accessToken}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Download",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/files/{{fileId}}",
+            "description": "Authenticated download. Set fileId from profile image response."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Verification",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{employeeAccessToken}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Start",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/verification/start",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json && json.data && json.data.id) {",
+                  "  pm.collectionVariables.set('verificationId', json.data.id);",
+                  "}",
+                  ""
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/verification/me",
+            "description": ""
+          }
+        },
+        {
+          "name": "Mock complete",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/verification/mock/complete",
+            "description": "Development/test only. 404 in production.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"verificationId\": \"{{verificationId}}\",\n  \"result\": \"SUCCEEDED\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Webhook (provider)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/verification/webhooks/mock",
+            "description": "Requires HMAC header X-Identity-Signature. Not for browser try-it without signing.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"evt-1\",\n  \"verificationId\": \"{{verificationId}}\",\n  \"result\": \"SUCCEEDED\",\n  \"maskedIdentity\": \"xxxx1234\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Membership",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{employeeAccessToken}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "GET membership",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/membership",
+            "description": ""
+          }
+        },
+        {
+          "name": "Info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/membership/info",
+            "description": ""
+          }
+        },
+        {
+          "name": "Join",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/membership/join",
+            "description": "Requires successful verification. termsVersion from env.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"termsVersion\": \"{{termsVersion}}\",\n  \"accepted\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Decline",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/membership/decline",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"termsVersion\": \"{{termsVersion}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Withdraw",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/membership/withdraw",
+            "description": "Returns NOT_ENABLED until M9 is decided."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Legal support",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{employeeAccessToken}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Categories",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/legal-support/categories",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json && Array.isArray(json.data) && json.data[0] && json.data[0].id) {",
+                  "  pm.collectionVariables.set('legalCategoryId', json.data[0].id);",
+                  "}",
+                  ""
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Providers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/legal-support/providers?districtId={{districtId}}&page=1&limit=20",
+            "description": ""
+          }
+        },
+        {
+          "name": "Get provider",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/legal-support/providers/{{legalProviderId}}",
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payments",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{employerAccessToken}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Initiate",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/payments/initiate",
+            "description": "Amount is server-side. Extra card fields → 400. Stub may return NOT_ENABLED.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"purpose\": \"EMPLOYER_ACTIVATION\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json && json.data && json.data.id) {",
+                  "  pm.collectionVariables.set('paymentId', json.data.id);",
+                  "}",
+                  ""
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get payment",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/payments/{{paymentId}}",
+            "description": ""
+          }
+        },
+        {
+          "name": "Webhook (provider)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/payments/webhooks/stub",
+            "description": "Requires HMAC header X-Payment-Signature.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"evt-1\",\n  \"providerOrderId\": \"order-1\",\n  \"status\": \"SUCCEEDED\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{adminAccessToken}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Session",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/admin/session",
+            "description": ""
+          }
+        },
+        {
+          "name": "Permissions check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/admin/permissions/check",
+            "description": ""
+          }
+        },
+        {
+          "name": "Users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/admin/users?page=1&limit=20",
+            "description": ""
+          }
+        },
+        {
+          "name": "User detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/admin/users/{{userId}}",
+            "description": ""
+          }
+        },
+        {
+          "name": "Set user status",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/admin/users/{{userId}}/status",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountStatus\": \"ACTIVE\",\n  \"reason\": \"Postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Jobs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/admin/jobs?page=1&limit=20",
+            "description": ""
+          }
+        },
+        {
+          "name": "Unpublish job",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/admin/jobs/{{jobId}}/unpublish",
+            "description": ""
+          }
+        },
+        {
+          "name": "Close job",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/admin/jobs/{{jobId}}/close",
+            "description": ""
+          }
+        },
+        {
+          "name": "Legal providers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/admin/legal-support/providers?page=1&limit=20",
+            "description": ""
+          }
+        },
+        {
+          "name": "Create legal provider",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/admin/legal-support/providers",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"categoryId\": \"{{legalCategoryId}}\",\n  \"name\": \"Postman Advocate\",\n  \"trustLevel\": \"PUBLIC_LISTING\",\n  \"coverages\": [\n    {\n      \"districtId\": \"{{districtId}}\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json && json.data && json.data.id) {",
+                  "  pm.collectionVariables.set('legalProviderId', json.data.id);",
+                  "}",
+                  ""
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Patch legal provider",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/admin/legal-support/providers/{{legalProviderId}}",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman Advocate 2\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Approve legal provider",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/admin/legal-support/providers/{{legalProviderId}}/approve",
+            "description": ""
+          }
+        },
+        {
+          "name": "Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/admin/metrics",
+            "description": ""
+          }
+        },
+        {
+          "name": "Audit logs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/admin/audit-logs?page=1&limit=20",
+            "description": ""
+          }
+        },
+        {
+          "name": "Create admin",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/admin/admins",
+            "description": "SUPER_ADMIN only (admins.manage).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+919876543222\",\n  \"password\": \"CorrectHorse1\",\n  \"permissions\": [\n    \"users.read\",\n    \"metrics.read\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Patch admin permissions",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/admin/admins/{{userId}}/permissions",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"permissions\": [\n    \"users.read\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

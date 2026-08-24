@@ -1,0 +1,698 @@
+// ham-backend PostgreSQL schema (Prisma 7)
+// Column names are snake_case. Index purpose is documented on each @@index.
+// Do not store full Aadhaar or payment credentials.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  EMPLOYEE
+  EMPLOYER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum AccountStatus {
+  PENDING_PHONE
+  ACTIVE
+  SUSPENDED
+  BLOCKED
+}
+
+enum PreferredLanguage {
+  ta
+  en
+  hi
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
+enum AvailabilityStatus {
+  AVAILABLE
+  NOT_AVAILABLE
+  AVAILABLE_FROM
+}
+
+enum JobStatus {
+  DRAFT
+  PUBLISHED
+  UNPUBLISHED
+  CLOSED
+}
+
+enum JobType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  DAILY_WAGE
+  OTHER
+}
+
+enum ApplicationStatus {
+  SUBMITTED
+  VIEWED
+  SHORTLISTED
+  REJECTED
+  WITHDRAWN
+  HIRED
+}
+
+enum VerificationStatus {
+  PENDING
+  IN_PROGRESS
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+enum MembershipStatus {
+  JOINED
+  DECLINED
+  WITHDRAWN
+}
+
+enum ConsentAction {
+  JOINED
+  DECLINED
+  WITHDRAWN
+}
+
+enum OtpPurpose {
+  REGISTER
+  LOGIN
+  PASSWORD_RESET
+  PHONE_CHANGE
+}
+
+enum PaymentStatus {
+  CREATED
+  PENDING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+enum ActivationStatus {
+  NOT_REQUIRED
+  REQUIRED
+  PENDING
+  ACTIVE
+}
+
+enum ListingTrust {
+  PLATFORM_VERIFIED
+  PUBLIC_LISTING
+}
+
+enum FileVisibility {
+  PRIVATE
+  PUBLIC
+}
+
+enum AuditActorType {
+  USER
+  SYSTEM
+}
+
+enum OrganizationVerificationState {
+  UNVERIFIED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum WagePeriod {
+  DAY
+  MONTH
+  PIECE
+}
+
+enum ApprovalStatus {
+  DRAFT
+  APPROVED
+  REJECTED
+}
+
+enum WelfareContentStatus {
+  COMING_SOON
+  PUBLISHED
+}
+
+model User {
+  id                String            @id @default(uuid(7)) @db.Uuid
+  role              Role
+  phone             String            @unique
+  phoneVerifiedAt   DateTime?         @map("phone_verified_at") @db.Timestamptz(6)
+  email             String?           @unique
+  emailVerifiedAt   DateTime?         @map("email_verified_at") @db.Timestamptz(6)
+  passwordHash      String?           @map("password_hash")
+  accountStatus     AccountStatus     @default(PENDING_PHONE) @map("account_status")
+  preferredLanguage PreferredLanguage @map("preferred_language")
+  lastLoginAt       DateTime?         @map("last_login_at") @db.Timestamptz(6)
+  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt         DateTime?         @map("deleted_at") @db.Timestamptz(6)
+
+  employeeProfile         EmployeeProfile?
+  employerProfile         EmployerProfile?
+  refreshTokens           RefreshToken[]
+  otpChallenges           OtpChallenge[]
+  authEvents              AuthEvent[]
+  adminPermissions        AdminUserPermission[]     @relation("AdminPermissions")
+  grantedAdminPermissions AdminUserPermission[]     @relation("AdminPermissionGrantor")
+  verificationRequests    VerificationRequest[]
+  hamMembership           HamMembership?
+  consentRecords          ConsentRecord[]
+  createdJobs             Job[]                     @relation("JobCreator")
+  applicationStatusChanges ApplicationStatusHistory[]
+  initiatedPayments       Payment[]                 @relation("PaymentInitiator")
+  ownedFiles              FileObject[]              @relation("FileOwner")
+  auditLogs               AuditLog[]                @relation("AuditActor")
+
+  @@index([accountStatus], map: "User_accountStatus_idx") // admin user filters
+  @@index([role], map: "User_role_idx") // admin role filters
+  @@index([createdAt], map: "User_createdAt_idx") // admin user offset list
+  @@index([deletedAt], map: "User_deletedAt_idx") // exclude soft-deleted in default queries
+  @@map("users")
+}
+
+model RefreshToken {
+  id                 String    @id @default(uuid(7)) @db.Uuid
+  userId             String    @map("user_id") @db.Uuid
+  tokenHash          String    @unique @map("token_hash")
+  familyId           String    @map("family_id") @db.Uuid
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt          DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt          DateTime? @map("revoked_at") @db.Timestamptz(6)
+  replacedByTokenId  String?   @unique @map("replaced_by_token_id") @db.Uuid
+  createdByIp        String?   @map("created_by_ip")
+  userAgent          String?   @map("user_agent")
+
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replacedBy RefreshToken? @relation("RefreshTokenReplacement", fields: [replacedByTokenId], references: [id], onDelete: SetNull)
+  replaces   RefreshToken? @relation("RefreshTokenReplacement")
+
+  @@index([userId], map: "RefreshToken_userId_idx") // logout-all
+  @@index([familyId], map: "RefreshToken_familyId_idx") // reuse detection / family revoke
+  @@index([expiresAt], map: "RefreshToken_expiresAt_idx") // purge expired rows
+  @@map("refresh_tokens")
+}
+
+model OtpChallenge {
+  id          String     @id @default(uuid(7)) @db.Uuid
+  phone       String
+  userId      String?    @map("user_id") @db.Uuid
+  purpose     OtpPurpose
+  codeHash    String     @map("code_hash")
+  attempts    Int        @default(0)
+  maxAttempts Int        @default(5) @map("max_attempts")
+  expiresAt   DateTime   @map("expires_at") @db.Timestamptz(6)
+  consumedAt  DateTime?  @map("consumed_at") @db.Timestamptz(6)
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([phone, purpose, createdAt], map: "OtpChallenge_phone_purpose_createdAt_idx") // latest challenge lookup
+  @@index([expiresAt], map: "OtpChallenge_expiresAt_idx") // purge
+  @@map("otp_challenges")
+}
+
+model AuthEvent {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  phone     String?
+  type      String
+  ip        String?
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt], map: "AuthEvent_userId_createdAt_idx") // per-user security timeline
+  @@index([createdAt], map: "AuthEvent_createdAt_idx") // operational scan
+  @@map("auth_events")
+}
+
+model AdminUserPermission {
+  id              String   @id @default(uuid(7)) @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  permission      String
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdByUserId String?  @map("created_by_user_id") @db.Uuid
+
+  user      User  @relation("AdminPermissions", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy User? @relation("AdminPermissionGrantor", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, permission], map: "AdminUserPermission_userId_permission_key")
+  @@map("admin_user_permissions")
+}
+
+model FileObject {
+  id           String         @id @default(uuid(7)) @db.Uuid
+  ownerUserId  String         @map("owner_user_id") @db.Uuid
+  storageKey   String         @unique @map("storage_key")
+  detectedMime String         @map("detected_mime")
+  byteSize     Int            @map("byte_size")
+  visibility   FileVisibility @default(PRIVATE)
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  deletedAt    DateTime?      @map("deleted_at") @db.Timestamptz(6)
+
+  owner                   User              @relation("FileOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
+  employeeProfileImages   EmployeeProfile[] @relation("EmployeeProfileImage")
+  organizationLogos       Organization[]    @relation("OrganizationLogo")
+
+  @@map("file_objects")
+}
+
+model District {
+  id       String  @id @default(uuid(7)) @db.Uuid
+  code     String  @unique
+  names    Json // { "en": "...", "ta": "...", ... } — extra locales are keys, not columns
+  isActive Boolean @default(true) @map("is_active")
+
+  cities            City[]
+  employeeProfiles  EmployeeProfile[]
+  organizations     Organization[]
+  jobs              Job[]
+  geoCoverages      GeoCoverage[]
+
+  @@map("districts")
+}
+
+model City {
+  id         String  @id @default(uuid(7)) @db.Uuid
+  districtId String  @map("district_id") @db.Uuid
+  code       String
+  names      Json // locale map; do not add name_xx columns
+  isActive   Boolean @default(true) @map("is_active")
+
+  district         District          @relation(fields: [districtId], references: [id], onDelete: Restrict)
+  areas            Area[]
+  employeeProfiles EmployeeProfile[]
+  organizations    Organization[]
+  jobs             Job[]
+  geoCoverages     GeoCoverage[]
+
+  @@unique([districtId, code], map: "City_districtId_code_key")
+  @@index([districtId], map: "City_districtId_idx") // list cities in a district
+  @@map("cities")
+}
+
+model Area {
+  id       String  @id @default(uuid(7)) @db.Uuid
+  cityId   String  @map("city_id") @db.Uuid
+  code     String
+  names    Json // locale map; do not add name_xx columns
+  isActive Boolean @default(true) @map("is_active")
+
+  city             City              @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  employeeProfiles EmployeeProfile[]
+  jobs             Job[]
+  geoCoverages     GeoCoverage[]
+
+  @@unique([cityId, code], map: "Area_cityId_code_key")
+  @@index([cityId], map: "Area_cityId_idx") // list areas in a city
+  @@map("areas")
+}
+
+model EmployeeProfile {
+  id                  String             @id @default(uuid(7)) @db.Uuid
+  userId              String             @unique @map("user_id") @db.Uuid
+  fullName            String?            @map("full_name")
+  dateOfBirth         DateTime?          @map("date_of_birth") @db.Date
+  gender              Gender?
+  profileImageFileId  String?            @map("profile_image_file_id") @db.Uuid
+  districtId          String?            @map("district_id") @db.Uuid
+  cityId              String?            @map("city_id") @db.Uuid
+  areaId              String?            @map("area_id") @db.Uuid
+  availabilityStatus  AvailabilityStatus @default(AVAILABLE) @map("availability_status")
+  availableFrom       DateTime?          @map("available_from") @db.Date
+  bio                 String?
+  createdAt           DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profileImage FileObject? @relation("EmployeeProfileImage", fields: [profileImageFileId], references: [id], onDelete: SetNull)
+  district     District?   @relation(fields: [districtId], references: [id], onDelete: Restrict)
+  city         City?       @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  area         Area?       @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  skills       EmployeeSkill[]
+  applications JobApplication[]
+
+  @@index([districtId], map: "EmployeeProfile_districtId_idx") // worker search by district
+  @@index([availabilityStatus], map: "EmployeeProfile_availabilityStatus_idx") // worker search by availability
+  @@map("employee_profiles")
+}
+
+model EmployerProfile {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  userId         String   @unique @map("user_id") @db.Uuid
+  fullName       String?  @map("full_name")
+  organizationId String?  @map("organization_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@map("employer_profiles")
+}
+
+model Organization {
+  id                 String                         @id @default(uuid(7)) @db.Uuid
+  name               String
+  description        String?
+  contactPhone       String?                        @map("contact_phone")
+  contactEmail       String?                        @map("contact_email")
+  districtId         String?                        @map("district_id") @db.Uuid
+  cityId             String?                        @map("city_id") @db.Uuid
+  verificationState  OrganizationVerificationState  @default(UNVERIFIED) @map("verification_state")
+  activationStatus   ActivationStatus               @default(NOT_REQUIRED) @map("activation_status")
+  logoFileId         String?                        @map("logo_file_id") @db.Uuid
+  createdAt          DateTime                       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime                       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt          DateTime?                      @map("deleted_at") @db.Timestamptz(6)
+
+  district         District?         @relation(fields: [districtId], references: [id], onDelete: Restrict)
+  city             City?             @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  logo             FileObject?       @relation("OrganizationLogo", fields: [logoFileId], references: [id], onDelete: SetNull)
+  employerProfiles EmployerProfile[]
+  jobs             Job[]
+  payments         Payment[]
+
+  @@index([name], map: "Organization_name_idx") // admin org search
+  @@index([activationStatus], map: "Organization_activationStatus_idx") // future payment gating queries
+  @@map("organizations")
+}
+
+model SkillCategory {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  code      String   @unique
+  names     Json // locale map; do not add name_xx columns
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  skills Skill[]
+
+  @@map("skill_categories")
+}
+
+model Skill {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  categoryId String   @map("category_id") @db.Uuid
+  code       String   @unique
+  names      Json // locale map; do not add name_xx columns
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  category       SkillCategory   @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  employeeSkills EmployeeSkill[]
+  jobSkills      JobSkill[]
+
+  @@index([categoryId], map: "Skill_categoryId_idx") // catalog by category
+  @@index([isActive], map: "Skill_isActive_idx") // hide inactive catalog rows
+  @@map("skills")
+}
+
+model EmployeeSkill {
+  employeeProfileId String   @map("employee_profile_id") @db.Uuid
+  skillId           String   @map("skill_id") @db.Uuid
+  yearsExperience   Int?     @map("years_experience")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  employeeProfile EmployeeProfile @relation(fields: [employeeProfileId], references: [id], onDelete: Cascade)
+  skill           Skill           @relation(fields: [skillId], references: [id], onDelete: Restrict)
+
+  @@id([employeeProfileId, skillId])
+  @@map("employee_skills")
+}
+
+model Job {
+  id              String     @id @default(uuid(7)) @db.Uuid
+  organizationId  String     @map("organization_id") @db.Uuid
+  createdByUserId String     @map("created_by_user_id") @db.Uuid
+  title           String
+  description     String
+  jobType         JobType    @map("job_type")
+  status          JobStatus  @default(DRAFT)
+  districtId      String     @map("district_id") @db.Uuid
+  cityId          String?    @map("city_id") @db.Uuid
+  areaId          String?    @map("area_id") @db.Uuid
+  vacancies       Int        @default(1)
+  wageMinPaise    Int?       @map("wage_min_paise")
+  wageMaxPaise    Int?       @map("wage_max_paise")
+  wagePeriod      WagePeriod? @map("wage_period")
+  publishedAt     DateTime?  @map("published_at") @db.Timestamptz(6)
+  closedAt        DateTime?  @map("closed_at") @db.Timestamptz(6)
+  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt       DateTime?  @map("deleted_at") @db.Timestamptz(6)
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdBy    User             @relation("JobCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  district     District         @relation(fields: [districtId], references: [id], onDelete: Restrict)
+  city         City?            @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  area         Area?            @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  skills       JobSkill[]
+  applications JobApplication[]
+
+  @@index([organizationId, createdAt], map: "Job_organizationId_createdAt_idx") // employer my-jobs offset list
+  @@index([status, publishedAt, id], map: "Job_status_publishedAt_id_idx") // public job feed cursor (publishedAt, id)
+  @@index([districtId, status], map: "Job_districtId_status_idx") // geo + status filter
+  @@index([deletedAt], map: "Job_deletedAt_idx") // exclude soft-deleted public jobs
+  @@map("jobs")
+}
+
+model JobSkill {
+  jobId   String @map("job_id") @db.Uuid
+  skillId String @map("skill_id") @db.Uuid
+
+  job   Job   @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  skill Skill @relation(fields: [skillId], references: [id], onDelete: Restrict)
+
+  @@id([jobId, skillId])
+  @@index([skillId], map: "JobSkill_skillId_idx") // filter jobs by required skill
+  @@map("job_skills")
+}
+
+model JobApplication {
+  id                String            @id @default(uuid(7)) @db.Uuid
+  jobId             String            @map("job_id") @db.Uuid
+  employeeProfileId String            @map("employee_profile_id") @db.Uuid
+  status            ApplicationStatus @default(SUBMITTED)
+  coverNote         String?           @map("cover_note")
+  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  job             Job                        @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  employeeProfile EmployeeProfile            @relation(fields: [employeeProfileId], references: [id], onDelete: Restrict)
+  statusHistory   ApplicationStatusHistory[]
+
+  @@unique([employeeProfileId, jobId], map: "JobApplication_employeeProfileId_jobId_key") // one application per employee per job
+  @@index([jobId, createdAt], map: "JobApplication_jobId_createdAt_idx") // employer applicant inbox
+  @@index([employeeProfileId, createdAt], map: "JobApplication_employeeProfileId_createdAt_idx") // employee application history
+  @@index([status], map: "JobApplication_status_idx") // status filters
+  @@map("job_applications")
+}
+
+model ApplicationStatusHistory {
+  id            String            @id @default(uuid(7)) @db.Uuid
+  applicationId String            @map("application_id") @db.Uuid
+  fromStatus    ApplicationStatus? @map("from_status")
+  toStatus      ApplicationStatus @map("to_status")
+  actorUserId   String            @map("actor_user_id") @db.Uuid
+  note          String?
+  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  application JobApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  actor       User           @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([applicationId, createdAt], map: "ApplicationStatusHistory_applicationId_createdAt_idx") // status audit trail
+  @@map("application_status_histories")
+}
+
+model VerificationRequest {
+  id             String             @id @default(uuid(7)) @db.Uuid
+  userId         String             @map("user_id") @db.Uuid
+  provider       String
+  providerRef    String?            @map("provider_ref")
+  status         VerificationStatus
+  maskedIdentity String?            @map("masked_identity")
+  failureCode    String?            @map("failure_code")
+  startedAt      DateTime?          @map("started_at") @db.Timestamptz(6)
+  completedAt    DateTime?          @map("completed_at") @db.Timestamptz(6)
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  metadata       Json?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, createdAt], map: "VerificationRequest_userId_createdAt_idx") // latest verification for a user
+  @@map("verification_requests")
+}
+
+model HamMembership {
+  id          String           @id @default(uuid(7)) @db.Uuid
+  userId      String           @unique @map("user_id") @db.Uuid
+  status      MembershipStatus
+  joinedAt    DateTime?        @map("joined_at") @db.Timestamptz(6)
+  withdrawnAt DateTime?        @map("withdrawn_at") @db.Timestamptz(6)
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user    User            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  consent ConsentRecord[]
+
+  @@map("ham_memberships")
+}
+
+model ConsentRecord {
+  id           String        @id @default(uuid(7)) @db.Uuid
+  userId       String        @map("user_id") @db.Uuid
+  membershipId String?       @map("membership_id") @db.Uuid
+  action       ConsentAction
+  termsVersion String        @map("terms_version")
+  occurredAt   DateTime      @map("occurred_at") @db.Timestamptz(6)
+  ip           String?
+  userAgent    String?       @map("user_agent")
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user       User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  membership HamMembership? @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+
+  @@index([userId, occurredAt], map: "ConsentRecord_userId_occurredAt_idx") // consent evidence timeline
+  @@map("consent_records")
+}
+
+model SupportProviderCategory {
+  id       String  @id @default(uuid(7)) @db.Uuid
+  code     String  @unique
+  names    Json // locale map; do not add name_xx columns
+  isActive Boolean @default(true) @map("is_active")
+
+  providers SupportProvider[]
+
+  @@map("support_provider_categories")
+}
+
+model SupportProvider {
+  id             String         @id @default(uuid(7)) @db.Uuid
+  categoryId     String         @map("category_id") @db.Uuid
+  name           String
+  description    String?
+  trustLevel     ListingTrust   @map("trust_level")
+  approvalStatus ApprovalStatus @default(DRAFT) @map("approval_status")
+  phone          String?
+  email          String?
+  addressText    String?        @map("address_text")
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt      DateTime?      @map("deleted_at") @db.Timestamptz(6)
+
+  category  SupportProviderCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  coverages GeoCoverage[]
+
+  @@map("support_providers")
+}
+
+model GeoCoverage {
+  id         String  @id @default(uuid(7)) @db.Uuid
+  providerId String  @map("provider_id") @db.Uuid
+  districtId String  @map("district_id") @db.Uuid
+  cityId     String? @map("city_id") @db.Uuid
+  areaId     String? @map("area_id") @db.Uuid
+
+  provider SupportProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  district District        @relation(fields: [districtId], references: [id], onDelete: Restrict)
+  city     City?           @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  area     Area?           @relation(fields: [areaId], references: [id], onDelete: Restrict)
+
+  @@index([districtId, cityId, areaId], map: "GeoCoverage_districtId_cityId_areaId_idx") // legal-support lookup by location
+  @@map("geo_coverages")
+}
+
+model Payment {
+  id              String        @id @default(uuid(7)) @db.Uuid
+  organizationId  String        @map("organization_id") @db.Uuid
+  userId          String        @map("user_id") @db.Uuid
+  provider        String
+  providerOrderId String?       @map("provider_order_id")
+  amountPaise     Int           @map("amount_paise")
+  currency        String        @default("INR")
+  status          PaymentStatus
+  purpose         String
+  idempotencyKey  String?       @unique @map("idempotency_key")
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user         User           @relation("PaymentInitiator", fields: [userId], references: [id], onDelete: Restrict)
+  webhookEvents WebhookEvent[]
+
+  @@unique([provider, providerOrderId], map: "Payment_provider_providerOrderId_key")
+  @@map("payments")
+}
+
+model WebhookEvent {
+  id                 String    @id @default(uuid(7)) @db.Uuid
+  provider           String
+  providerEventId    String    @map("provider_event_id")
+  paymentId          String?   @map("payment_id") @db.Uuid
+  processedAt        DateTime? @map("processed_at") @db.Timestamptz(6)
+  payloadFingerprint String    @map("payload_fingerprint")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  payment Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@unique([provider, providerEventId], map: "WebhookEvent_provider_providerEventId_key") // webhook idempotency
+  @@map("webhook_events")
+}
+
+model WelfareContent {
+  id        String               @id @default(uuid(7)) @db.Uuid
+  slug      String               @unique
+  status    WelfareContentStatus @default(COMING_SOON)
+  titles    Json // locale map
+  bodies    Json // locale map; empty object if unpublished copy
+  updatedAt DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("welfare_contents")
+}
+
+model AuditLog {
+  id          String         @id @default(uuid(7)) @db.Uuid
+  actorType   AuditActorType @map("actor_type")
+  actorUserId String?        @map("actor_user_id") @db.Uuid
+  action      String
+  targetType  String         @map("target_type")
+  targetId    String?        @map("target_id") @db.Uuid
+  metadata    Json?
+  ip          String?
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  actor User? @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([actorUserId, createdAt], map: "AuditLog_actorUserId_createdAt_idx") // actor activity
+  @@index([targetType, targetId], map: "AuditLog_targetType_targetId_idx") // target lookup
+  @@index([createdAt], map: "AuditLog_createdAt_idx") // time-range admin queries
+  @@map("audit_logs")
+}
+
+// SQL-only indexes (Prisma cannot express these in schema; applied in
+// prisma/migrations/20260824120000_init/migration.sql):
+// - VerificationRequest_provider_providerRef_key: UNIQUE (provider, provider_ref) WHERE provider_ref IS NOT NULL
+// - GeoCoverage_unique_coverage: UNIQUE (provider_id, district_id, COALESCE(city_id), COALESCE(area_id))
+// - Job_status_publishedAt_id_idx: (status, published_at DESC, id DESC) public feed cursor
+// - Payment_provider_providerOrderId_key: UNIQUE (provider, provider_order_id) WHERE provider_order_id IS NOT NULL
+// - users_email_key: UNIQUE (email) WHERE email IS NOT NULL
