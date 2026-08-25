@@ -362,7 +362,7 @@ Full field lists are in DATABASE_DESIGN.md. Summary:
 
 ## 11. Localization
 
-- `User.preferredLanguage`: `ta` | `en` | `hi`.
+- `User.preferredLanguage`: `ta` | `en` | `hi`. New registrations default to **`hi`** when the client omits `preferredLanguage` (application default + DB column default). Explicit values are never overwritten.
 - `Accept-Language` may be read as a hint when the user is anonymous (job browse). Authenticated requests prefer `User.preferredLanguage`.
 - Localized entities (legal support names/categories, skills, geo catalogs, welfare content) store a JSON locale map (`names` / `titles` / `bodies`). Adding a language is a new key, not a new column. Jobs stay single-language author text.
 - Error `message` may be a stable English string plus `code`. Clients localize by `code`. Do not build a server-side i18n catalog for every error in v1.

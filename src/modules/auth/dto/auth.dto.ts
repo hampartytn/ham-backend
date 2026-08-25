@@ -20,8 +20,10 @@ export class RegisterDto {
   @IsIn(['EMPLOYEE', 'EMPLOYER'])
   role!: 'EMPLOYEE' | 'EMPLOYER';
 
+  /** Defaults to Hindi (`hi`) when omitted — see DEFAULT_PREFERRED_LANGUAGE. */
+  @IsOptional()
   @IsIn(['ta', 'en', 'hi'])
-  preferredLanguage!: 'ta' | 'en' | 'hi';
+  preferredLanguage?: 'ta' | 'en' | 'hi';
 
   @IsOptional()
   @IsEmail()

@@ -159,6 +159,22 @@ describe('Authentication (e2e)', () => {
     expect(employerProfile).not.toBeNull();
   });
 
+  it('defaults preferredLanguage to hi when omitted on register', async () => {
+    const phone = uniquePhone();
+    const response = await request(app.getHttpServer() as Server)
+      .post('/api/v1/auth/register')
+      .send({
+        phone,
+        role: 'EMPLOYEE',
+        password: PASSWORD,
+      })
+      .expect(201);
+
+    const userId = (response.body as { data: { userId: string } }).data.userId;
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    expect(user?.preferredLanguage).toBe('hi');
+  });
+
   it('verifies register OTP, issues tokens, and protects /auth/session', async () => {
     const phone = uniquePhone();
     await request(app.getHttpServer() as Server)

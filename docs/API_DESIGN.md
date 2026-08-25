@@ -145,7 +145,7 @@ Stricter rate limits. Generic credential errors.
 
 - **Auth:** Public  
 - **Role:** none  
-- **Request DTO:** `phone` (E.164), `role` (`EMPLOYEE` \| `EMPLOYER` only — never ADMIN/SUPER_ADMIN), `preferredLanguage`, `email?`, `password?` (required later if they want password login; min length 10, not only numeric)  
+- **Request DTO:** `phone` (E.164), `role` (`EMPLOYEE` \| `EMPLOYER` only — never ADMIN/SUPER_ADMIN), `preferredLanguage?` (`ta` \| `en` \| `hi`; **defaults to `hi` when omitted**), `email?`, `password?` (required later if they want password login; min length 10, not only numeric)  
 - **Response:** `{ data: { userId, phone, accountStatus: "PENDING_PHONE" } }` — **do not** issue tokens until phone verified  
 - **Errors:** 400 validation; 409 if phone already registered (`CONFLICT` generic: “Unable to register with this phone” to reduce enumeration if desired; product may use explicit conflict — **prefer generic** for register if the phone exists)  
 - **Ownership:** n/a  

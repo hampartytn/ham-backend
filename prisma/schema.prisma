@@ -159,7 +159,7 @@ model User {
   emailVerifiedAt   DateTime?         @map("email_verified_at") @db.Timestamptz(6)
   passwordHash      String?           @map("password_hash")
   accountStatus     AccountStatus     @default(PENDING_PHONE) @map("account_status")
-  preferredLanguage PreferredLanguage @map("preferred_language")
+  preferredLanguage PreferredLanguage @default(hi) @map("preferred_language")
   lastLoginAt       DateTime?         @map("last_login_at") @db.Timestamptz(6)
   createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt         DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)

@@ -9,6 +9,7 @@ import {
 } from '../../generated/prisma/enums';
 import { PrismaService } from '../../database/prisma.service';
 import { ErrorCode } from '../../common/constants/error-codes';
+import { DEFAULT_PREFERRED_LANGUAGE } from '../../common/constants/locales';
 import type { AuthenticatedUser } from '../../common/types/authenticated-user';
 import { AuthEventType, OTP_TTL_SECONDS } from './auth.constants';
 import {
@@ -93,7 +94,7 @@ export class AuthService implements OnModuleInit {
           data: {
             phone: dto.phone,
             role: dto.role,
-            preferredLanguage: dto.preferredLanguage,
+            preferredLanguage: dto.preferredLanguage ?? DEFAULT_PREFERRED_LANGUAGE,
             email: dto.email,
             passwordHash,
             accountStatus: 'PENDING_PHONE',
