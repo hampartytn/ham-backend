@@ -491,6 +491,13 @@ describe('Auth throttling (e2e)', () => {
 
     expect((response.body as ErrorEnvelope).error.code).toBe('RATE_LIMITED');
   });
+
+  it('does not apply the auth bucket to job reads', async () => {
+    const server = app.getHttpServer() as Server;
+    await request(server).get('/api/v1/jobs').expect(401);
+    await request(server).get('/api/v1/jobs').expect(401);
+    await request(server).get('/api/v1/jobs').expect(401);
+  });
 });
 
 async function registerAndVerify(

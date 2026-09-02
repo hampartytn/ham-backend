@@ -8,17 +8,26 @@ import {
   UpsertOrganizationDto,
   WorkerSearchQueryDto,
 } from './dto/employer.dto';
+import { EmployerMembershipService } from './employer-membership.service';
 import { EmployersService } from './employers.service';
 
 @Controller('employer')
 @Roles('EMPLOYER')
 @ApiTags('employers')
 export class EmployersController {
-  constructor(private readonly employersService: EmployersService) {}
+  constructor(
+    private readonly employersService: EmployersService,
+    private readonly employerMembershipService: EmployerMembershipService,
+  ) {}
 
   @Get('profile')
   getProfile(@CurrentUser() user: AuthenticatedUser) {
     return this.employersService.getProfile(user);
+  }
+
+  @Get('membership')
+  getMembership(@CurrentUser() user: AuthenticatedUser) {
+    return this.employerMembershipService.getMembership(user);
   }
 
   @Patch('profile')

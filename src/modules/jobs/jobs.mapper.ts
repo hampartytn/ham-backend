@@ -28,11 +28,21 @@ type JobRecord = {
   skills: JobSkillRow[];
 };
 
-export function toPublicJobDto(job: JobRecord, language: string) {
+/** Feed/list rows omit description, audit fields, and organizationId (org id is on `organization`). */
+type PublicJobListRecord = Omit<
+  JobRecord,
+  | 'description'
+  | 'createdByUserId'
+  | 'closedAt'
+  | 'createdAt'
+  | 'updatedAt'
+  | 'organizationId'
+>;
+
+function publicJobFields(job: PublicJobListRecord, language: string) {
   return {
     id: job.id,
     title: job.title,
-    description: job.description,
     jobType: job.jobType,
     status: job.status,
     districtId: job.districtId,
@@ -52,6 +62,18 @@ export function toPublicJobDto(job: JobRecord, language: string) {
       code: row.skill.code,
       name: localizedName(language, row.skill.names),
     })),
+  };
+}
+
+/** List/feed projection: omit description (detail still uses toPublicJobDto). */
+export function toPublicJobListDto(job: PublicJobListRecord, language: string) {
+  return publicJobFields(job, language);
+}
+
+export function toPublicJobDto(job: JobRecord, language: string) {
+  return {
+    ...publicJobFields(job, language),
+    description: job.description,
   };
 }
 

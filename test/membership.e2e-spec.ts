@@ -30,8 +30,18 @@ type MembershipBody = {
   data: {
     status: string | null;
     canJoin: boolean;
+    canPay: boolean;
     termsVersion: string;
     identityVerified: boolean;
+    membershipPaid: boolean;
+    paymentStatus: string | null;
+    plan: {
+      id: string;
+      code: string;
+      name: string;
+      amountPaise: number;
+      currency: string;
+    } | null;
   };
 };
 
@@ -107,11 +117,19 @@ describe('HAM membership (e2e)', () => {
       .get('/api/v1/membership')
       .set('Authorization', `Bearer ${session.accessToken}`)
       .expect(200);
-    expect((before.body as MembershipBody).data).toEqual({
+    expect((before.body as MembershipBody).data).toMatchObject({
       status: null,
       canJoin: false,
+      canPay: false,
       termsVersion: TERMS,
       identityVerified: false,
+      membershipPaid: false,
+      paymentStatus: null,
+    });
+    expect((before.body as MembershipBody).data.plan).toMatchObject({
+      code: 'employee-ham-membership',
+      amountPaise: 9900,
+      currency: 'INR',
     });
 
     const info = await request(server)
@@ -140,7 +158,7 @@ describe('HAM membership (e2e)', () => {
     expect((unverifiedJoin.body as ErrorEnvelope).error.code).toBe('CONFLICT');
   });
 
-  it('joins with explicit consent and rejects a second join', async () => {
+  it('keeps join disabled until a membership payment has succeeded', async () => {
     const session = await registerEmployee(app, sms);
     const server = app.getHttpServer() as Server;
     await completeVerification(server, session.accessToken);
@@ -149,7 +167,8 @@ describe('HAM membership (e2e)', () => {
       .get('/api/v1/membership')
       .set('Authorization', `Bearer ${session.accessToken}`)
       .expect(200);
-    expect((ready.body as MembershipBody).data.canJoin).toBe(true);
+    expect((ready.body as MembershipBody).data.canJoin).toBe(false);
+    expect((ready.body as MembershipBody).data.canPay).toBe(true);
     expect((ready.body as MembershipBody).data.identityVerified).toBe(true);
 
     await request(server)
@@ -164,49 +183,12 @@ describe('HAM membership (e2e)', () => {
       .send({ termsVersion: 'wrong-version', accepted: true })
       .expect(400);
 
-    const joined = await request(server)
-      .post('/api/v1/membership/join')
-      .set('Authorization', `Bearer ${session.accessToken}`)
-      .set('User-Agent', 'P8-join-agent')
-      .send({ termsVersion: TERMS, accepted: true })
-      .expect(200);
-    expect((joined.body as MembershipBody).data.status).toBe('JOINED');
-    expect((joined.body as MembershipBody).data.canJoin).toBe(false);
-
-    const again = await request(server)
+    const unpaidJoin = await request(server)
       .post('/api/v1/membership/join')
       .set('Authorization', `Bearer ${session.accessToken}`)
       .send({ termsVersion: TERMS, accepted: true })
       .expect(409);
-    expect((again.body as ErrorEnvelope).error.code).toBe('CONFLICT');
-
-    const current = await request(server)
-      .get('/api/v1/membership')
-      .set('Authorization', `Bearer ${session.accessToken}`)
-      .expect(200);
-    expect((current.body as MembershipBody).data.status).toBe('JOINED');
-
-    const me = await request(server)
-      .get('/api/v1/me')
-      .set('Authorization', `Bearer ${session.accessToken}`)
-      .expect(200);
-    expect(
-      (
-        me.body as {
-          data: { onboarding: { hamMembershipStatus: string | null } };
-        }
-      ).data.onboarding.hamMembershipStatus,
-    ).toBe('JOINED');
-
-    const consent = await prisma.consentRecord.findMany({
-      where: { userId: session.userId },
-    });
-    expect(consent).toHaveLength(1);
-    expect(consent[0].action).toBe('JOINED');
-    expect(consent[0].termsVersion).toBe(TERMS);
-    expect(consent[0].occurredAt).toBeInstanceOf(Date);
-    expect(consent[0].userAgent).toBe('P8-join-agent');
-    expect(consent[0].membershipId).toEqual(expect.any(String));
+    expect((unpaidJoin.body as ErrorEnvelope).error.code).toBe('CONFLICT');
   });
 
   it('records decline consent after verification', async () => {
@@ -221,7 +203,8 @@ describe('HAM membership (e2e)', () => {
       .send({ termsVersion: TERMS })
       .expect(200);
     expect((declined.body as MembershipBody).data.status).toBe('DECLINED');
-    expect((declined.body as MembershipBody).data.canJoin).toBe(true);
+    expect((declined.body as MembershipBody).data.canJoin).toBe(false);
+    expect((declined.body as MembershipBody).data.canPay).toBe(true);
 
     const consent = await prisma.consentRecord.findFirst({
       where: { userId: session.userId, action: 'DECLINED' },
@@ -272,7 +255,8 @@ describe('HAM membership (e2e)', () => {
       .set('Authorization', `Bearer ${session.accessToken}`)
       .expect(200);
     expect((membership.body as MembershipBody).data.status).toBeNull();
-    expect((membership.body as MembershipBody).data.canJoin).toBe(true);
+    expect((membership.body as MembershipBody).data.canJoin).toBe(false);
+    expect((membership.body as MembershipBody).data.canPay).toBe(true);
     expect((membership.body as MembershipBody).data.identityVerified).toBe(
       true,
     );

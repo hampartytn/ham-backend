@@ -133,6 +133,11 @@ enum OrganizationVerificationState {
   REJECTED
 }
 
+enum EmployerMembershipStatus {
+  INACTIVE
+  ACTIVE
+}
+
 enum WagePeriod {
   DAY
   MONTH
@@ -353,6 +358,7 @@ model EmployeeProfile {
 
   @@index([districtId], map: "EmployeeProfile_districtId_idx") // worker search by district
   @@index([availabilityStatus], map: "EmployeeProfile_availabilityStatus_idx") // worker search by availability
+  @@index([createdAt], map: "EmployeeProfile_createdAt_idx") // worker search offset order
   @@map("employee_profiles")
 }
 
@@ -378,9 +384,11 @@ model Organization {
   contactEmail       String?                        @map("contact_email")
   districtId         String?                        @map("district_id") @db.Uuid
   cityId             String?                        @map("city_id") @db.Uuid
-  verificationState  OrganizationVerificationState  @default(UNVERIFIED) @map("verification_state")
-  activationStatus   ActivationStatus               @default(NOT_REQUIRED) @map("activation_status")
-  logoFileId         String?                        @map("logo_file_id") @db.Uuid
+  verificationState      OrganizationVerificationState @default(UNVERIFIED) @map("verification_state")
+  activationStatus       ActivationStatus              @default(NOT_REQUIRED) @map("activation_status")
+  membershipStatus       EmployerMembershipStatus      @default(INACTIVE) @map("membership_status")
+  membershipActivatedAt  DateTime?                     @map("membership_activated_at") @db.Timestamptz(6)
+  logoFileId             String?                       @map("logo_file_id") @db.Uuid
   createdAt          DateTime                       @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime                       @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt          DateTime?                      @map("deleted_at") @db.Timestamptz(6)
@@ -435,6 +443,7 @@ model EmployeeSkill {
   skill           Skill           @relation(fields: [skillId], references: [id], onDelete: Restrict)
 
   @@id([employeeProfileId, skillId])
+  @@index([skillId], map: "EmployeeSkill_skillId_idx") // worker search by skill
   @@map("employee_skills")
 }
 
@@ -470,6 +479,7 @@ model Job {
   @@index([organizationId, createdAt], map: "Job_organizationId_createdAt_idx") // employer my-jobs offset list
   @@index([status, publishedAt, id], map: "Job_status_publishedAt_id_idx") // public job feed cursor (publishedAt, id)
   @@index([districtId, status], map: "Job_districtId_status_idx") // geo + status filter
+  @@index([cityId, status], map: "Job_cityId_status_idx") // city + status filter
   @@index([deletedAt], map: "Job_deletedAt_idx") // exclude soft-deleted public jobs
   @@map("jobs")
 }
@@ -542,6 +552,21 @@ model VerificationRequest {
   @@map("verification_requests")
 }
 
+model MembershipPlan {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  code        String   @unique
+  names       Json // locale map; do not add name_xx columns
+  amountPaise Int      @map("amount_paise")
+  currency    String   @default("INR")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  payments Payment[]
+
+  @@map("membership_plans")
+}
+
 model HamMembership {
   id          String           @id @default(uuid(7)) @db.Uuid
   userId      String           @unique @map("user_id") @db.Uuid
@@ -551,8 +576,9 @@ model HamMembership {
   createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  user    User            @relation(fields: [userId], references: [id], onDelete: Restrict)
-  consent ConsentRecord[]
+  user     User            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  consent  ConsentRecord[]
+  payments Payment[]
 
   @@map("ham_memberships")
 }
@@ -603,6 +629,9 @@ model SupportProvider {
   category  SupportProviderCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   coverages GeoCoverage[]
 
+  @@index([approvalStatus], map: "SupportProvider_approvalStatus_idx") // legal listing by approval
+  @@index([categoryId], map: "SupportProvider_categoryId_idx") // legal listing by category
+  @@index([deletedAt], map: "SupportProvider_deletedAt_idx") // exclude soft-deleted providers
   @@map("support_providers")
 }
 
@@ -619,28 +648,35 @@ model GeoCoverage {
   area     Area?           @relation(fields: [areaId], references: [id], onDelete: Restrict)
 
   @@index([districtId, cityId, areaId], map: "GeoCoverage_districtId_cityId_areaId_idx") // legal-support lookup by location
+  @@index([providerId], map: "GeoCoverage_providerId_idx") // coverages for a provider
   @@map("geo_coverages")
 }
 
 model Payment {
-  id              String        @id @default(uuid(7)) @db.Uuid
-  organizationId  String        @map("organization_id") @db.Uuid
-  userId          String        @map("user_id") @db.Uuid
-  provider        String
-  providerOrderId String?       @map("provider_order_id")
-  amountPaise     Int           @map("amount_paise")
-  currency        String        @default("INR")
-  status          PaymentStatus
-  purpose         String
-  idempotencyKey  String?       @unique @map("idempotency_key")
-  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                String        @id @default(uuid(7)) @db.Uuid
+  organizationId    String?       @map("organization_id") @db.Uuid
+  userId            String        @map("user_id") @db.Uuid
+  membershipId      String?       @map("membership_id") @db.Uuid
+  membershipPlanId  String?       @map("membership_plan_id") @db.Uuid
+  provider          String
+  providerOrderId   String?       @map("provider_order_id")
+  providerPaymentId String?       @map("provider_payment_id")
+  amountPaise       Int           @map("amount_paise")
+  currency          String        @default("INR")
+  status            PaymentStatus
+  purpose           String
+  idempotencyKey    String?       @unique @map("idempotency_key")
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  user         User           @relation("PaymentInitiator", fields: [userId], references: [id], onDelete: Restrict)
-  webhookEvents WebhookEvent[]
+  organization   Organization?   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user           User            @relation("PaymentInitiator", fields: [userId], references: [id], onDelete: Restrict)
+  membership     HamMembership?  @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+  membershipPlan MembershipPlan? @relation(fields: [membershipPlanId], references: [id], onDelete: Restrict)
+  webhookEvents  WebhookEvent[]
 
   @@unique([provider, providerOrderId], map: "Payment_provider_providerOrderId_key")
+  @@index([userId, purpose, status], map: "Payment_userId_purpose_status_idx")
   @@map("payments")
 }
 

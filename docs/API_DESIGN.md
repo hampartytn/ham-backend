@@ -327,7 +327,16 @@ All require **Bearer + EMPLOYEE**. Ownership: caller’s `EmployeeProfile`.
 - **Auth:** Bearer + EMPLOYER  
 - **Request DTO:** `name`, `description?`, `contactPhone?`, `contactEmail?`, `districtId?`, `cityId?`  
 - **Ownership:** create-or-update caller’s organization only  
-- **Response:** organization DTO (`activationStatus` included for future UI; v1 does not block)
+- **Response:** organization DTO (`activationStatus` included for future UI; v1 does not block). Also includes `membershipStatus` and `membershipActivatedAt`. Paid membership does **not** set `verificationState` to VERIFIED and does **not** gate job posting.
+
+### GET /api/v1/employer/membership
+
+- **Auth:** Bearer + EMPLOYER  
+- **Response:** `{ status, canPay, profileComplete, paymentStatus, activatedAt, verificationState, plan }`  
+- `status` is `INACTIVE` \| `ACTIVE` (Employer HAM Membership). Independent of organization `verificationState`.  
+- `plan.amountPaise` is server-catalog (seed `employer-ham-membership`). Client must not treat a hardcoded ₹99 as source of truth.  
+- `canPay` is true only when the company profile checklist is complete, the plan is active, membership is not ACTIVE, and Razorpay is configured.  
+- **Payment:** does **not** verify the organization. Job posting remains ungated (D11).
 
 ### POST /api/v1/employer/jobs
 
@@ -542,14 +551,25 @@ Authenticated employees (and admins). Not public anonymous in v1 (contact data).
 
 ## 17. Payments — `/api/v1/payments`
 
-v1: stub provider. **Job posting not gated.** Endpoints exist for future activation; may return `NOT_ENABLED` until Phase 10 is requested.
+v1: Razorpay for membership products; stub remains for `EMPLOYER_ACTIVATION`. **Job posting is not gated.** Employer membership payment does **not** set organization `verificationState` to VERIFIED.
 
 ### POST /api/v1/payments/initiate
 
-- **Auth:** Bearer + EMPLOYER  
-- **Request DTO:** `{ purpose: "EMPLOYER_ACTIVATION", amountPaise? }` amount server-side if catalog price exists  
-- **Response:** `{ paymentId, status, providerPayload }` providerPayload is checkout fields only  
-- **Errors:** 409 `NOT_ENABLED` if stub disabled; 502 provider  
+- **Auth:** Bearer + EMPLOYER or EMPLOYEE  
+- **Request DTO:**  
+  - `{ purpose: "EMPLOYER_ACTIVATION", amountPaise? }` — stub scaffold; amount from `PAYMENT_EMPLOYER_ACTIVATION_PAISE`; may return `409 NOT_ENABLED`  
+  - `{ purpose: "EMPLOYER_MEMBERSHIP", planId }` — Employer HAM Membership. Amount from `MembershipPlan` `employer-ham-membership`. Requires complete company profile. `409` if already ACTIVE, incomplete profile, or Razorpay not enabled.  
+  - `{ purpose: "MEMBERSHIP", planId, termsVersion, accepted: true }` — employee membership only  
+- Client `amountPaise` is ignored.  
+- **Response:** `{ paymentId, status, providerPayload }` — Razorpay payload includes `keyId`, `orderId`, `amountPaise`, `currency`, `checkoutMode`  
+- **Errors:** 403 wrong role; 409 `NOT_ENABLED` / incomplete profile / already active / no org; 502 provider  
+
+### POST /api/v1/payments/confirm
+
+- **Auth:** Bearer + EMPLOYEE or EMPLOYER  
+- **Request DTO:** `{ razorpay_order_id, razorpay_payment_id, razorpay_signature }`  
+- Verifies Razorpay checkout HMAC. Employee path activates `HamMembership`. Employer path sets `Organization.membershipStatus = ACTIVE` and does **not** change `verificationState` or `activationStatus`.  
+- **Response:** `{ paymentId, status, membershipStatus }`  
 
 ### GET /api/v1/payments/:paymentId
 

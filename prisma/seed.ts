@@ -696,11 +696,63 @@ async function seedDevAdmin() {
   }
 }
 
+async function seedMembershipPlans() {
+  await prisma.membershipPlan.upsert({
+    where: { code: 'employee-ham-membership' },
+    update: {
+      names: localeMapFromTriplet(
+        'Employee HAM Membership',
+        'பணியாளர் HAM உறுப்பினர்',
+        'कर्मचारी HAM सदस्यता',
+      ),
+      amountPaise: 9900,
+      currency: 'INR',
+      isActive: true,
+    },
+    create: {
+      code: 'employee-ham-membership',
+      names: localeMapFromTriplet(
+        'Employee HAM Membership',
+        'பணியாளர் HAM உறுப்பினர்',
+        'कर्मचारी HAM सदस्यता',
+      ),
+      amountPaise: 9900,
+      currency: 'INR',
+      isActive: true,
+    },
+  });
+  await prisma.membershipPlan.upsert({
+    where: { code: 'employer-ham-membership' },
+    update: {
+      names: localeMapFromTriplet(
+        'Employer HAM Membership',
+        'முதலாளி HAM உறுப்பினர்',
+        'नियोक्ता HAM सदस्यता',
+      ),
+      amountPaise: 9900,
+      currency: 'INR',
+      isActive: true,
+    },
+    create: {
+      code: 'employer-ham-membership',
+      names: localeMapFromTriplet(
+        'Employer HAM Membership',
+        'முதலாளி HAM உறுப்பினர்',
+        'नियोक्ता HAM सदस्यता',
+      ),
+      amountPaise: 9900,
+      currency: 'INR',
+      isActive: true,
+    },
+  });
+}
+
 async function main() {
   await seedSkills();
   await seedGeography();
   await seedWelfare();
   await seedSupportCategories();
+  await seedMembershipPlans();
   await seedDevAdmin();
 }
 

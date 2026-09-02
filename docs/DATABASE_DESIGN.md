@@ -82,6 +82,7 @@ ConsentAction        JOINED | DECLINED | WITHDRAWN
 OtpPurpose           REGISTER | LOGIN | PASSWORD_RESET | PHONE_CHANGE
 PaymentStatus        CREATED | PENDING | SUCCEEDED | FAILED | CANCELLED
 ActivationStatus     NOT_REQUIRED | REQUIRED | PENDING | ACTIVE   (default NOT_REQUIRED in v1)
+EmployerMembershipStatus INACTIVE | ACTIVE   (paid Employer HAM Membership; independent of verificationState)
 ListingTrust         PLATFORM_VERIFIED | PUBLIC_LISTING
 FileVisibility       PRIVATE | PUBLIC
 AuditActorType       USER | SYSTEM
@@ -262,6 +263,8 @@ Do not add “just in case” PII (father’s name, caste, religion, exact addre
 | cityId | uuid | NULL, FK City | |
 | verificationState | text | NOT NULL, default UNVERIFIED | UNVERIFIED \| PENDING \| VERIFIED \| REJECTED |
 | activationStatus | ActivationStatus | NOT NULL, default NOT_REQUIRED | v1 does **not** gate jobs |
+| membershipStatus | EmployerMembershipStatus | NOT NULL, default INACTIVE | Paid Employer HAM Membership. Independent of `verificationState`. Payment success does **not** set organization VERIFIED. |
+| membershipActivatedAt | timestamptz | NULL | Set when membership becomes ACTIVE |
 | logoFileId | uuid | NULL, FK FileObject | |
 | createdAt / updatedAt / deletedAt | timestamptz | | Soft delete |
 
@@ -519,7 +522,7 @@ Designed for future use. **Not used to gate jobs in v1.**
 | amountPaise | int NOT NULL | |
 | currency | text NOT NULL default INR | |
 | status | PaymentStatus | |
-| purpose | text | e.g. EMPLOYER_ACTIVATION |
+| purpose | text | e.g. EMPLOYER_ACTIVATION, MEMBERSHIP, EMPLOYER_MEMBERSHIP |
 | idempotencyKey | text NULL UNIQUE | Client/server initiate |
 | createdAt / updatedAt | | |
 

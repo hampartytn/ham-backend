@@ -49,7 +49,13 @@ Strongly set in production:
 | `FILE_STORAGE_PROVIDER` | `local` until M7; ensure the directory is writable and backed up |
 | `SEED_DEV_ADMIN` | `false`. No production passwords in env files checked into git. |
 
-Webhook secrets (`IDENTITY_WEBHOOK_SECRET`, `PAYMENT_WEBHOOK_SECRET`) must be long random values shared with the provider, not the `.env.example` placeholders.
+Webhook secrets (`IDENTITY_WEBHOOK_SECRET`, `PAYMENT_WEBHOOK_SECRET`, `RAZORPAY_WEBHOOK_SECRET`) must be long random values shared with the provider, not the `.env.example` placeholders.
+
+Razorpay Test Mode webhooks must POST to:
+
+`https://<public-api-host>/api/v1/payments/webhooks/razorpay`
+
+Do not use `/api/payments/razorpay/webhook`. Nest global prefix is `api` plus URI version `v1`. Update the **existing** Razorpay Dashboard webhook URL if it does not match. Do not create a second webhook. Razorpay cannot reach `http://localhost:3000`; use a public HTTPS tunnel or staging host for local webhook delivery.
 
 ---
 

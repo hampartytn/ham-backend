@@ -33,3 +33,13 @@ process.env.PAYMENT_STUB_ENABLED ??= 'true';
 process.env.PAYMENT_WEBHOOK_SECRET ??=
   'test-payment-webhook-secret-min-32chars!!';
 process.env.PAYMENT_EMPLOYER_ACTIVATION_PAISE ??= '1';
+if (!process.env.RAZORPAY_KEY_ID) {
+  process.env.RAZORPAY_KEY_ID = 'rzp_test_ham_e2e_placeholder';
+}
+if (!process.env.RAZORPAY_KEY_SECRET) {
+  process.env.RAZORPAY_KEY_SECRET = 'test-razorpay-key-secret-min-32chars!!';
+}
+if (!process.env.RAZORPAY_WEBHOOK_SECRET) {
+  process.env.RAZORPAY_WEBHOOK_SECRET =
+    'test-razorpay-webhook-secret-min-32chars';
+}

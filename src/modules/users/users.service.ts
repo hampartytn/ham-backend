@@ -20,20 +20,37 @@ export class UsersService {
   async getMe(user: AuthenticatedUser) {
     const record = await this.prisma.user.findUnique({
       where: { id: user.id },
-      include: {
+      select: {
+        id: true,
+        role: true,
+        phone: true,
+        email: true,
+        preferredLanguage: true,
+        accountStatus: true,
+        phoneVerifiedAt: true,
         employeeProfile: {
-          include: {
+          select: {
+            id: true,
+            fullName: true,
+            districtId: true,
+            availabilityStatus: true,
             skills: true,
-            profileImage: true,
+            profileImage: { select: { id: true } },
           },
         },
         employerProfile: {
-          include: { organization: true },
+          select: {
+            id: true,
+            fullName: true,
+            organizationId: true,
+            organization: { select: { name: true } },
+          },
         },
-        hamMembership: true,
+        hamMembership: { select: { status: true } },
         verificationRequests: {
           orderBy: { createdAt: 'desc' },
           take: 1,
+          select: { status: true },
         },
       },
     });

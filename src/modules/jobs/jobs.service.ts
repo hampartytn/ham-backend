@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -11,17 +12,41 @@ import { assertSameOrganization } from '../../common/utils/ownership';
 import { decodeJobCursor, encodeJobCursor } from '../../database/cursor';
 import { offsetFromQuery } from '../../database/pagination';
 import { PrismaService } from '../../database/prisma.service';
+import { isEmployerMembershipActive } from '../employers/employer-membership.util';
 import {
   CreateJobDto,
   EmployerJobsQueryDto,
   JobFeedQueryDto,
   PatchJobDto,
 } from './dto/job.dto';
-import { toEmployerJobDto, toPublicJobDto } from './jobs.mapper';
+import {
+  toEmployerJobDto,
+  toPublicJobDto,
+  toPublicJobListDto,
+} from './jobs.mapper';
 
 const jobInclude = {
   organization: { select: { id: true, name: true } },
   skills: { include: { skill: true } },
+} as const;
+
+const jobListSelect = {
+  id: true,
+  title: true,
+  jobType: true,
+  status: true,
+  districtId: true,
+  cityId: true,
+  areaId: true,
+  vacancies: true,
+  wageMinPaise: true,
+  wageMaxPaise: true,
+  wagePeriod: true,
+  publishedAt: true,
+  organization: { select: { id: true, name: true } },
+  skills: {
+    select: { skillId: true, skill: { select: { code: true, names: true } } },
+  },
 } as const;
 
 @Injectable()
@@ -30,6 +55,7 @@ export class JobsService {
 
   async create(user: AuthenticatedUser, dto: CreateJobDto) {
     const organizationId = await this.requireOrganizationId(user, true);
+    await this.assertMembershipAllowsJobPosting(organizationId);
     await this.assertLocation(dto);
     const skillIds = await this.requireSkills(dto.skillIds);
     this.assertWages(dto.wageMinPaise, dto.wageMaxPaise, dto.wagePeriod);
@@ -163,6 +189,7 @@ export class JobsService {
 
   async publish(user: AuthenticatedUser, jobId: string) {
     const job = await this.requireOwnedJob(user, jobId);
+    await this.assertMembershipAllowsJobPosting(job.organizationId);
     if (job.status !== 'DRAFT' && job.status !== 'UNPUBLISHED') {
       throw conflict('Job cannot be published');
     }
@@ -239,7 +266,7 @@ export class JobsService {
 
     const rows = await this.prisma.job.findMany({
       where,
-      include: jobInclude,
+      select: jobListSelect,
       orderBy: [{ publishedAt: 'desc' }, { id: 'desc' }],
       take: limit + 1,
     });
@@ -253,7 +280,7 @@ export class JobsService {
         : null;
 
     return {
-      data: page.map((job) => toPublicJobDto(job, user.preferredLanguage)),
+      data: page.map((job) => toPublicJobListDto(job, user.preferredLanguage)),
       meta: { nextCursor, limit },
     };
   }
@@ -271,6 +298,21 @@ export class JobsService {
       throw notFound();
     }
     return { data: toPublicJobDto(job, user.preferredLanguage) };
+  }
+
+  private async assertMembershipAllowsJobPosting(
+    organizationId: string,
+  ): Promise<void> {
+    const organization = await this.prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { membershipStatus: true },
+    });
+    if (!isEmployerMembershipActive(organization?.membershipStatus)) {
+      throw new ForbiddenException({
+        code: ErrorCode.MEMBERSHIP_REQUIRED,
+        message: 'Employer membership is required to post jobs',
+      });
+    }
   }
 
   private async requireOrganizationId(

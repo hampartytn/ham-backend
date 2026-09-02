@@ -60,5 +60,10 @@ export default () => ({
     employerActivationPaise: Number(
       process.env.PAYMENT_EMPLOYER_ACTIVATION_PAISE ?? 1,
     ),
+    razorpay: {
+      keyId: process.env.RAZORPAY_KEY_ID ?? '',
+      keySecret: process.env.RAZORPAY_KEY_SECRET ?? '',
+      webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET ?? '',
+    },
   },
 });

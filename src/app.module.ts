@@ -1,7 +1,8 @@
-import { Module } from '@nestjs/common';
+import { ExecutionContext, Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { AuthController } from './modules/auth/auth.controller';
 import { LoggerModule } from 'nestjs-pino';
 import { randomUUID } from 'node:crypto';
 import { IncomingMessage } from 'node:http';
@@ -85,6 +86,8 @@ import { buildPinoRedactPaths } from './common/utils/redact';
             name: 'auth',
             ttl: configService.get<number>('throttle.authTtlMs', 60_000),
             limit: configService.get<number>('throttle.authLimit', 10),
+            skipIf: (context: ExecutionContext) =>
+              context.getClass() !== AuthController,
           },
         ],
       }),

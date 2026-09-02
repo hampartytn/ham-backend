@@ -201,7 +201,7 @@ Each decision includes why, alternatives, and trade-offs.
 
 ### D11. Employer payment designed but does not gate job posting in v1
 
-- **Decision (confirmed 2026-08-24):** Payment models, adapters, and webhook/idempotency design exist. Job publish is **not** gated on payment in v1. `Organization.activationStatus` exists for a future flag, default not required.
+- **Decision (confirmed 2026-08-24):** Payment models, adapters, and webhook/idempotency design exist. Job publish is **not** gated on payment in v1. `Organization.activationStatus` exists for a future flag, default not required. Paid Employer HAM Membership (`Organization.membershipStatus`) is a separate product: successful ₹99 payment sets membership ACTIVE and does **not** set organization `verificationState` to VERIFIED and does **not** gate jobs.
 - **Why:** Business model is not confirmed. Spec forbids selecting a payment provider until requirements are confirmed.
 - **Alternatives:** Gate publish on payment (rejected for v1).
 - **Trade-offs:** Employers can post without paying until a later flag is enabled.

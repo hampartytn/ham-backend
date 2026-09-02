@@ -213,6 +213,8 @@ function organizationDto(organization: {
   cityId: string | null;
   verificationState: string;
   activationStatus: string;
+  membershipStatus: string;
+  membershipActivatedAt: Date | null;
 }) {
   return {
     id: organization.id,
@@ -224,5 +226,7 @@ function organizationDto(organization: {
     cityId: organization.cityId,
     verificationState: organization.verificationState,
     activationStatus: organization.activationStatus,
+    membershipStatus: organization.membershipStatus,
+    membershipActivatedAt: organization.membershipActivatedAt,
   };
 }

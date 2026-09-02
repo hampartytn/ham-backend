@@ -109,7 +109,7 @@ const SWAGGER_DESCRIPTION = [
   'Roles: EMPLOYEE, EMPLOYER, ADMIN, SUPER_ADMIN. Admin routes also require a permission; SUPER_ADMIN has all permissions.',
   '',
   'Error envelope: `{ "error": { "code", "message", "details?", "requestId" } }`.',
-  'Codes: VALIDATION_ERROR, UNAUTHORIZED, INVALID_CREDENTIALS, INVALID_OR_EXPIRED_CODE, FORBIDDEN, ACCOUNT_SUSPENDED, ACCOUNT_BLOCKED, NOT_FOUND, CONFLICT, NOT_ENABLED, RATE_LIMITED, PROVIDER_UNAVAILABLE, INTERNAL_ERROR.',
+  'Codes: VALIDATION_ERROR, UNAUTHORIZED, INVALID_CREDENTIALS, INVALID_OR_EXPIRED_CODE, FORBIDDEN, ACCOUNT_SUSPENDED, ACCOUNT_BLOCKED, NOT_FOUND, CONFLICT, NOT_ENABLED, MEMBERSHIP_REQUIRED, RATE_LIMITED, PROVIDER_UNAVAILABLE, INTERNAL_ERROR.',
   '',
   'Never send password hashes, full identity numbers, or card data. Mock identity complete is omitted from the production OpenAPI document.',
 ].join('\n');

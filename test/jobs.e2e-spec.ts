@@ -143,7 +143,7 @@ describe('Jobs and applications (e2e)', () => {
     await app?.close();
   });
 
-  it('requires an organization to create a job and does not require payment to publish', async () => {
+  it('requires organization and active membership to create or publish a job', async () => {
     const employer = await registerAndVerify(
       app,
       sms,
@@ -165,6 +165,17 @@ describe('Jobs and applications (e2e)', () => {
       .send({ name: `P6-org-${employer.userId}` })
       .expect(200);
 
+    const inactive = await request(server)
+      .post('/api/v1/employer/jobs')
+      .set('Authorization', `Bearer ${employer.accessToken}`)
+      .send(jobPayload(districtId, skillId, 'Mason draft'))
+      .expect(403);
+    expect((inactive.body as ErrorEnvelope).error.code).toBe(
+      'MEMBERSHIP_REQUIRED',
+    );
+
+    await activateEmployerMembership(prisma, employer.userId);
+
     await request(server)
       .post('/api/v1/employer/jobs')
       .set('Authorization', `Bearer ${employer.accessToken}`)
@@ -181,6 +192,19 @@ describe('Jobs and applications (e2e)', () => {
       .expect(201);
     const job = created.body as JobBody;
     expect(job.data.status).toBe('DRAFT');
+
+    await prisma.organization.update({
+      where: { id: job.data.organization.id },
+      data: { membershipStatus: 'INACTIVE', membershipActivatedAt: null },
+    });
+    const blockedPublish = await request(server)
+      .post(`/api/v1/employer/jobs/${job.data.id}/publish`)
+      .set('Authorization', `Bearer ${employer.accessToken}`)
+      .expect(403);
+    expect((blockedPublish.body as ErrorEnvelope).error.code).toBe(
+      'MEMBERSHIP_REQUIRED',
+    );
+    await activateEmployerMembership(prisma, employer.userId);
 
     const published = await request(server)
       .post(`/api/v1/employer/jobs/${job.data.id}/publish`)
@@ -265,6 +289,7 @@ describe('Jobs and applications (e2e)', () => {
     expect(feedBody.data.some((job) => job.id === publishedId)).toBe(true);
     expect(feedBody.data.some((job) => job.id === draftId)).toBe(false);
     expect(feedBody.data.every((job) => job.status === 'PUBLISHED')).toBe(true);
+    expect(feedBody.data.every((job) => !('description' in job))).toBe(true);
 
     await request(server)
       .get(`/api/v1/jobs/${draftId}`)
@@ -276,10 +301,14 @@ describe('Jobs and applications (e2e)', () => {
       .set('Authorization', `Bearer ${employer.accessToken}`)
       .expect(404);
 
-    await request(server)
+    const publishedDetail = await request(server)
       .get(`/api/v1/jobs/${publishedId}`)
       .set('Authorization', `Bearer ${employee.accessToken}`)
       .expect(200);
+    expect(
+      (publishedDetail.body as { data: { description: string } }).data
+        .description,
+    ).toEqual(expect.any(String));
 
     await request(server)
       .get('/api/v1/jobs')
@@ -671,7 +700,26 @@ async function employerWithOrg(
     .set('Authorization', `Bearer ${session.accessToken}`)
     .send({ name: `P6-${label}-${session.userId}` })
     .expect(200);
+  await activateEmployerMembership(app.get(PrismaService), session.userId);
   return session;
+}
+
+async function activateEmployerMembership(
+  prisma: PrismaService,
+  userId: string,
+): Promise<void> {
+  const profile = await prisma.employerProfile.findUnique({
+    where: { userId },
+    select: { organizationId: true },
+  });
+  expect(profile?.organizationId).toBeTruthy();
+  await prisma.organization.update({
+    where: { id: profile!.organizationId! },
+    data: {
+      membershipStatus: 'ACTIVE',
+      membershipActivatedAt: new Date(),
+    },
+  });
 }
 
 async function registerAndVerify(

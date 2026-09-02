@@ -18,7 +18,12 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import type { AuthenticatedUser } from '../../common/types/authenticated-user';
-import { InitiatePaymentDto, PaymentWebhookDto } from './dto/payment.dto';
+import { RAZORPAY_PROVIDER_NAME } from '../../integrations/payment/razorpay-signature';
+import {
+  ConfirmPaymentDto,
+  InitiatePaymentDto,
+  PaymentWebhookDto,
+} from './dto/payment.dto';
 import { PaymentsService } from './payments.service';
 
 @Controller('payments')
@@ -27,12 +32,23 @@ export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
   @Post('initiate')
-  @Roles('EMPLOYER')
+  @Roles('EMPLOYER', 'EMPLOYEE')
   initiate(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: InitiatePaymentDto,
   ) {
     return this.paymentsService.initiate(user, dto);
+  }
+
+  @Post('confirm')
+  @Roles('EMPLOYEE', 'EMPLOYER')
+  @HttpCode(HttpStatus.OK)
+  confirm(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: ConfirmPaymentDto,
+    @Req() request: Request,
+  ) {
+    return this.paymentsService.confirm(user, dto, consentContext(request));
   }
 
   @Public()
@@ -41,20 +57,29 @@ export class PaymentsController {
   @HttpCode(HttpStatus.OK)
   handleWebhook(
     @Param('provider') provider: string,
-    @Headers('x-payment-signature') signature: string | undefined,
+    @Headers('x-payment-signature') stubSignature: string | undefined,
+    @Headers('x-razorpay-signature') razorpaySignature: string | undefined,
+    @Headers('x-razorpay-event-id') razorpayEventId: string | undefined,
     @Req() request: RawBodyRequest<Request>,
-    @Body() dto: PaymentWebhookDto,
+    @Body() body: unknown,
   ) {
+    if (provider === RAZORPAY_PROVIDER_NAME) {
+      return this.paymentsService.handleRazorpayWebhook(
+        razorpaySignature,
+        razorpayEventId,
+        request.rawBody,
+      );
+    }
     return this.paymentsService.handleWebhook(
       provider,
-      signature,
+      stubSignature,
       request.rawBody,
-      dto,
+      body as PaymentWebhookDto,
     );
   }
 
   @Get(':paymentId')
-  @Roles('EMPLOYER')
+  @Roles('EMPLOYER', 'EMPLOYEE')
   getPayment(
     @CurrentUser() user: AuthenticatedUser,
     @Param('paymentId', new ParseUUIDPipe({ version: '7' }))
@@ -62,4 +87,14 @@ export class PaymentsController {
   ) {
     return this.paymentsService.getPayment(user, paymentId);
   }
+}
+
+function consentContext(request: Request): {
+  ip: string | null;
+  userAgent: string | null;
+} {
+  return {
+    ip: request.ip ?? request.socket.remoteAddress ?? null,
+    userAgent: request.header('user-agent') ?? null,
+  };
 }

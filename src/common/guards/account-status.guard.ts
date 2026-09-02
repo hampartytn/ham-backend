@@ -48,6 +48,14 @@ export class AccountStatusGuard implements CanActivate {
 
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
+      select: {
+        id: true,
+        role: true,
+        accountStatus: true,
+        phone: true,
+        preferredLanguage: true,
+        deletedAt: true,
+      },
     });
 
     if (!user || user.deletedAt || user.accountStatus === 'PENDING_PHONE') {

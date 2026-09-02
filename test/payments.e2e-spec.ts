@@ -8,7 +8,18 @@ import { PrismaService } from './../src/database/prisma.service';
 import { setupApp } from './../src/app.setup';
 import { MockSmsProvider } from './../src/integrations/messaging/mock-sms.provider';
 import { paymentWebhookSignature } from './../src/integrations/payment/webhook-signature';
+import { RAZORPAY_PAYMENT_PROVIDER } from './../src/integrations/payment/razorpay.tokens';
+import {
+  razorpayCheckoutSignature,
+  razorpayWebhookSignature,
+} from './../src/integrations/payment/razorpay-signature';
 import { ErrorEnvelope } from './../src/common/constants/error-codes';
+import { FakeRazorpayPaymentProvider } from './helpers/fake-razorpay.provider';
+import { DEFAULT_MEMBERSHIP_TERMS_VERSION } from './../src/modules/membership/membership.util';
+import {
+  EMPLOYEE_MEMBERSHIP_PLAN_CODE,
+  EMPLOYER_MEMBERSHIP_PLAN_CODE,
+} from './../src/modules/payments/payments.util';
 
 const PHONE_PREFIX = '+91333';
 const PASSWORD = 'CorrectHorse1';
@@ -48,7 +59,10 @@ function uniquePhone(): string {
 async function createApp(): Promise<INestApplication> {
   const moduleFixture: TestingModule = await Test.createTestingModule({
     imports: [AppModule],
-  }).compile();
+  })
+    .overrideProvider(RAZORPAY_PAYMENT_PROVIDER)
+    .useValue(new FakeRazorpayPaymentProvider())
+    .compile();
   const app = moduleFixture.createNestApplication({ rawBody: true });
   setupApp(app);
   await app.init();
@@ -94,7 +108,19 @@ describe('Payments (e2e)', () => {
         await prisma.webhookEvent.deleteMany({
           where: { providerEventId: { startsWith: 'p10-' } },
         });
+        await prisma.webhookEvent.deleteMany({
+          where: { providerEventId: { startsWith: 'evt_test_' } },
+        });
         await prisma.payment.deleteMany({
+          where: { userId: { in: userIds } },
+        });
+        await prisma.consentRecord.deleteMany({
+          where: { userId: { in: userIds } },
+        });
+        await prisma.hamMembership.deleteMany({
+          where: { userId: { in: userIds } },
+        });
+        await prisma.verificationRequest.deleteMany({
           where: { userId: { in: userIds } },
         });
       }
@@ -229,7 +255,7 @@ describe('Payments (e2e)', () => {
     expect(afterLater.status).toBe('SUCCEEDED');
 
     const org = await prisma.organization.findUniqueOrThrow({
-      where: { id: stored.organizationId },
+      where: { id: stored.organizationId as string },
     });
     expect(org.activationStatus).toBe('NOT_REQUIRED');
   });
@@ -291,7 +317,576 @@ describe('Payments (e2e)', () => {
       .expect(401);
     expect((bad.body as ErrorEnvelope).error.code).toBe('UNAUTHORIZED');
   });
+
+  it('initiates employee membership at the plan price and activates once', async () => {
+    const employee = await registerAndVerify(
+      app,
+      sms,
+      uniquePhone(),
+      'EMPLOYEE',
+    );
+    const server = app.getHttpServer() as Server;
+    const plan = await prisma.membershipPlan.findFirstOrThrow({
+      where: { code: EMPLOYEE_MEMBERSHIP_PLAN_CODE, isActive: true },
+    });
+    expect(plan.amountPaise).toBe(9900);
+
+    await request(server)
+      .post('/api/v1/payments/initiate')
+      .set('Authorization', `Bearer ${employee.accessToken}`)
+      .send({
+        purpose: 'MEMBERSHIP',
+        planId: plan.id,
+        termsVersion: DEFAULT_MEMBERSHIP_TERMS_VERSION,
+        accepted: true,
+        amountPaise: 1,
+      })
+      .expect(409);
+
+    await completeVerification(server, employee.accessToken);
+
+    const initiated = await request(server)
+      .post('/api/v1/payments/initiate')
+      .set('Authorization', `Bearer ${employee.accessToken}`)
+      .send({
+        purpose: 'MEMBERSHIP',
+        planId: plan.id,
+        termsVersion: DEFAULT_MEMBERSHIP_TERMS_VERSION,
+        accepted: true,
+        amountPaise: 1,
+      })
+      .expect(201);
+    const body = initiated.body as InitiateBody;
+    expect(body.data.status).toBe('PENDING');
+    expect(body.data.providerPayload).toMatchObject({
+      amountPaise: 9900,
+      currency: 'INR',
+      checkoutMode: 'razorpay',
+    });
+    expect(body.data.providerPayload.orderId).toEqual(expect.any(String));
+    expect(body.data.providerPayload.keyId).toEqual(expect.any(String));
+
+    const stored = await prisma.payment.findUniqueOrThrow({
+      where: { id: body.data.paymentId },
+    });
+    expect(stored.amountPaise).toBe(9900);
+    expect(stored.organizationId).toBeNull();
+    expect(stored.purpose).toBe('MEMBERSHIP');
+
+    const reused = await request(server)
+      .post('/api/v1/payments/initiate')
+      .set('Authorization', `Bearer ${employee.accessToken}`)
+      .send({
+        purpose: 'MEMBERSHIP',
+        planId: plan.id,
+        termsVersion: DEFAULT_MEMBERSHIP_TERMS_VERSION,
+        accepted: true,
+      })
+      .expect(201);
+    expect((reused.body as InitiateBody).data.paymentId).toBe(body.data.paymentId);
+
+    const orderId = String(body.data.providerPayload.orderId);
+    const paymentId = 'pay_test_confirm';
+    const signature = razorpayCheckoutSignature(
+      orderId,
+      paymentId,
+      process.env.RAZORPAY_KEY_SECRET ?? '',
+    );
+
+    await request(server)
+      .post('/api/v1/payments/confirm')
+      .set('Authorization', `Bearer ${employee.accessToken}`)
+      .send({
+        razorpay_order_id: orderId,
+        razorpay_payment_id: paymentId,
+        razorpay_signature: 'deadbeef',
+      })
+      .expect(401);
+
+    const confirmed = await request(server)
+      .post('/api/v1/payments/confirm')
+      .set('Authorization', `Bearer ${employee.accessToken}`)
+      .send({
+        razorpay_order_id: orderId,
+        razorpay_payment_id: paymentId,
+        razorpay_signature: signature,
+      })
+      .expect(200);
+    expect(
+      (confirmed.body as { data: { status: string; membershipStatus: string } })
+        .data,
+    ).toMatchObject({
+      status: 'SUCCEEDED',
+      membershipStatus: 'JOINED',
+    });
+
+    const replay = await request(server)
+      .post('/api/v1/payments/confirm')
+      .set('Authorization', `Bearer ${employee.accessToken}`)
+      .send({
+        razorpay_order_id: orderId,
+        razorpay_payment_id: paymentId,
+        razorpay_signature: signature,
+      })
+      .expect(200);
+    expect(
+      (replay.body as { data: { membershipStatus: string } }).data
+        .membershipStatus,
+    ).toBe('JOINED');
+
+    expect(
+      await prisma.hamMembership.count({
+        where: { userId: employee.userId, status: 'JOINED' },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.consentRecord.count({
+        where: { userId: employee.userId, action: 'JOINED' },
+      }),
+    ).toBe(1);
+
+    const captured = {
+      event: 'payment.captured',
+      payload: {
+        payment: {
+          entity: { id: paymentId, order_id: orderId },
+        },
+      },
+    };
+    const capturedRaw = JSON.stringify(captured);
+    await request(server)
+      .post('/api/v1/payments/webhooks/razorpay')
+      .set('Content-Type', 'application/json')
+      .set(
+        'X-Razorpay-Signature',
+        razorpayWebhookSignature(
+          Buffer.from(capturedRaw),
+          process.env.RAZORPAY_WEBHOOK_SECRET ?? '',
+        ),
+      )
+      .set('X-Razorpay-Event-Id', 'evt_test_captured')
+      .send(capturedRaw)
+      .expect(200);
+
+    const paid = {
+      event: 'order.paid',
+      payload: {
+        payment: { entity: { id: paymentId, order_id: orderId } },
+        order: { entity: { id: orderId } },
+      },
+    };
+    const paidRaw = JSON.stringify(paid);
+    await request(server)
+      .post('/api/v1/payments/webhooks/razorpay')
+      .set('Content-Type', 'application/json')
+      .set(
+        'X-Razorpay-Signature',
+        razorpayWebhookSignature(
+          Buffer.from(paidRaw),
+          process.env.RAZORPAY_WEBHOOK_SECRET ?? '',
+        ),
+      )
+      .set('X-Razorpay-Event-Id', 'evt_test_order_paid')
+      .send(paidRaw)
+      .expect(200);
+
+    expect(
+      await prisma.hamMembership.count({
+        where: { userId: employee.userId, status: 'JOINED' },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.consentRecord.count({
+        where: { userId: employee.userId, action: 'JOINED' },
+      }),
+    ).toBe(1);
+
+    const membership = await request(server)
+      .get('/api/v1/membership')
+      .set('Authorization', `Bearer ${employee.accessToken}`)
+      .expect(200);
+    expect(
+      (
+        membership.body as {
+          data: { status: string; membershipPaid: boolean; canPay: boolean };
+        }
+      ).data,
+    ).toMatchObject({
+      status: 'JOINED',
+      membershipPaid: true,
+      canPay: false,
+      canJoin: false,
+    });
+  });
+
+  it('does not activate membership on a failed Razorpay webhook', async () => {
+    const employee = await registerAndVerify(
+      app,
+      sms,
+      uniquePhone(),
+      'EMPLOYEE',
+    );
+    const server = app.getHttpServer() as Server;
+    const plan = await prisma.membershipPlan.findFirstOrThrow({
+      where: { code: EMPLOYEE_MEMBERSHIP_PLAN_CODE, isActive: true },
+    });
+    await completeVerification(server, employee.accessToken);
+    const initiated = await request(server)
+      .post('/api/v1/payments/initiate')
+      .set('Authorization', `Bearer ${employee.accessToken}`)
+      .send({
+        purpose: 'MEMBERSHIP',
+        planId: plan.id,
+        termsVersion: DEFAULT_MEMBERSHIP_TERMS_VERSION,
+        accepted: true,
+      })
+      .expect(201);
+    const orderId = String(
+      (initiated.body as InitiateBody).data.providerPayload.orderId,
+    );
+    const failed = {
+      event: 'payment.failed',
+      payload: {
+        payment: { entity: { id: 'pay_fail', order_id: orderId } },
+      },
+    };
+    const raw = JSON.stringify(failed);
+    await request(server)
+      .post('/api/v1/payments/webhooks/razorpay')
+      .set('Content-Type', 'application/json')
+      .set(
+        'X-Razorpay-Signature',
+        razorpayWebhookSignature(
+          Buffer.from(raw),
+          process.env.RAZORPAY_WEBHOOK_SECRET ?? '',
+        ),
+      )
+      .set('X-Razorpay-Event-Id', 'evt_test_failed')
+      .send(raw)
+      .expect(200);
+
+    const stored = await prisma.payment.findUniqueOrThrow({
+      where: { id: (initiated.body as InitiateBody).data.paymentId },
+    });
+    expect(stored.status).toBe('FAILED');
+    expect(
+      await prisma.hamMembership.count({ where: { userId: employee.userId } }),
+    ).toBe(0);
+
+    await request(server)
+      .post('/api/v1/payments/webhooks/razorpay')
+      .set('Content-Type', 'application/json')
+      .set('X-Razorpay-Signature', 'deadbeef')
+      .set('X-Razorpay-Event-Id', 'evt_test_bad')
+      .send(raw)
+      .expect(401);
+  });
+
+  it('initiates employer membership at the plan price without verifying the organization', async () => {
+    const employer = await employerWithCompleteOrg(app, prisma, sms, 'mem');
+    const employee = await registerAndVerify(
+      app,
+      sms,
+      uniquePhone(),
+      'EMPLOYEE',
+    );
+    const incomplete = await employerWithOrg(app, sms, 'incomplete');
+    const server = app.getHttpServer() as Server;
+    const plan = await prisma.membershipPlan.findFirstOrThrow({
+      where: { code: EMPLOYER_MEMBERSHIP_PLAN_CODE, isActive: true },
+    });
+    expect(plan.amountPaise).toBe(9900);
+
+    const beforePay = await request(server)
+      .get('/api/v1/employer/membership')
+      .set('Authorization', `Bearer ${employer.accessToken}`)
+      .expect(200);
+    expect(
+      (
+        beforePay.body as {
+          data: {
+            status: string;
+            canPay: boolean;
+            profileComplete: boolean;
+            verificationState: string;
+            plan: { amountPaise: number; code: string };
+          };
+        }
+      ).data,
+    ).toMatchObject({
+      status: 'INACTIVE',
+      canPay: true,
+      profileComplete: true,
+      verificationState: 'UNVERIFIED',
+      plan: { amountPaise: 9900, code: EMPLOYER_MEMBERSHIP_PLAN_CODE },
+    });
+
+    await request(server)
+      .post('/api/v1/payments/initiate')
+      .set('Authorization', `Bearer ${employee.accessToken}`)
+      .send({ purpose: 'EMPLOYER_MEMBERSHIP', planId: plan.id })
+      .expect(403);
+
+    await request(server)
+      .post('/api/v1/payments/initiate')
+      .set('Authorization', `Bearer ${employer.accessToken}`)
+      .send({
+        purpose: 'MEMBERSHIP',
+        planId: plan.id,
+        termsVersion: DEFAULT_MEMBERSHIP_TERMS_VERSION,
+        accepted: true,
+      })
+      .expect(403);
+
+    const incompletePay = await request(server)
+      .post('/api/v1/payments/initiate')
+      .set('Authorization', `Bearer ${incomplete.accessToken}`)
+      .send({ purpose: 'EMPLOYER_MEMBERSHIP', planId: plan.id })
+      .expect(409);
+    expect((incompletePay.body as ErrorEnvelope).error.code).toBe('CONFLICT');
+
+    const initiated = await request(server)
+      .post('/api/v1/payments/initiate')
+      .set('Authorization', `Bearer ${employer.accessToken}`)
+      .send({
+        purpose: 'EMPLOYER_MEMBERSHIP',
+        planId: plan.id,
+        amountPaise: 1,
+      })
+      .expect(201);
+    const body = initiated.body as InitiateBody;
+    expect(body.data.status).toBe('PENDING');
+    expect(body.data.providerPayload).toMatchObject({
+      amountPaise: 9900,
+      currency: 'INR',
+      checkoutMode: 'razorpay',
+    });
+
+    const stored = await prisma.payment.findUniqueOrThrow({
+      where: { id: body.data.paymentId },
+    });
+    expect(stored.amountPaise).toBe(9900);
+    expect(stored.purpose).toBe('EMPLOYER_MEMBERSHIP');
+    expect(stored.organizationId).toEqual(expect.any(String));
+    expect(stored.membershipId).toBeNull();
+
+    const reused = await request(server)
+      .post('/api/v1/payments/initiate')
+      .set('Authorization', `Bearer ${employer.accessToken}`)
+      .send({ purpose: 'EMPLOYER_MEMBERSHIP', planId: plan.id })
+      .expect(201);
+    expect((reused.body as InitiateBody).data.paymentId).toBe(body.data.paymentId);
+
+    const orderId = String(body.data.providerPayload.orderId);
+    const paymentId = 'pay_employer_confirm';
+    const signature = razorpayCheckoutSignature(
+      orderId,
+      paymentId,
+      process.env.RAZORPAY_KEY_SECRET ?? '',
+    );
+
+    await request(server)
+      .post('/api/v1/payments/confirm')
+      .set('Authorization', `Bearer ${employee.accessToken}`)
+      .send({
+        razorpay_order_id: orderId,
+        razorpay_payment_id: paymentId,
+        razorpay_signature: signature,
+      })
+      .expect(404);
+
+    const confirmed = await request(server)
+      .post('/api/v1/payments/confirm')
+      .set('Authorization', `Bearer ${employer.accessToken}`)
+      .send({
+        razorpay_order_id: orderId,
+        razorpay_payment_id: paymentId,
+        razorpay_signature: signature,
+      })
+      .expect(200);
+    expect(
+      (confirmed.body as { data: { status: string; membershipStatus: string } })
+        .data,
+    ).toMatchObject({
+      status: 'SUCCEEDED',
+      membershipStatus: 'ACTIVE',
+    });
+
+    const replay = await request(server)
+      .post('/api/v1/payments/confirm')
+      .set('Authorization', `Bearer ${employer.accessToken}`)
+      .send({
+        razorpay_order_id: orderId,
+        razorpay_payment_id: paymentId,
+        razorpay_signature: signature,
+      })
+      .expect(200);
+    expect(
+      (replay.body as { data: { membershipStatus: string } }).data
+        .membershipStatus,
+    ).toBe('ACTIVE');
+
+    const org = await prisma.organization.findUniqueOrThrow({
+      where: { id: stored.organizationId as string },
+    });
+    expect(org.membershipStatus).toBe('ACTIVE');
+    expect(org.verificationState).toBe('UNVERIFIED');
+    expect(org.activationStatus).toBe('NOT_REQUIRED');
+    expect(
+      await prisma.hamMembership.count({ where: { userId: employer.userId } }),
+    ).toBe(0);
+
+    const captured = {
+      event: 'payment.captured',
+      payload: {
+        payment: { entity: { id: paymentId, order_id: orderId } },
+      },
+    };
+    const capturedRaw = JSON.stringify(captured);
+    await request(server)
+      .post('/api/v1/payments/webhooks/razorpay')
+      .set('Content-Type', 'application/json')
+      .set(
+        'X-Razorpay-Signature',
+        razorpayWebhookSignature(
+          Buffer.from(capturedRaw),
+          process.env.RAZORPAY_WEBHOOK_SECRET ?? '',
+        ),
+      )
+      .set('X-Razorpay-Event-Id', 'evt_test_employer_captured')
+      .send(capturedRaw)
+      .expect(200);
+
+    const paid = {
+      event: 'order.paid',
+      payload: {
+        payment: { entity: { id: paymentId, order_id: orderId } },
+        order: { entity: { id: orderId } },
+      },
+    };
+    const paidRaw = JSON.stringify(paid);
+    await request(server)
+      .post('/api/v1/payments/webhooks/razorpay')
+      .set('Content-Type', 'application/json')
+      .set(
+        'X-Razorpay-Signature',
+        razorpayWebhookSignature(
+          Buffer.from(paidRaw),
+          process.env.RAZORPAY_WEBHOOK_SECRET ?? '',
+        ),
+      )
+      .set('X-Razorpay-Event-Id', 'evt_test_employer_order_paid')
+      .send(paidRaw)
+      .expect(200);
+
+    const afterWebhook = await prisma.organization.findUniqueOrThrow({
+      where: { id: stored.organizationId as string },
+    });
+    expect(afterWebhook.membershipStatus).toBe('ACTIVE');
+    expect(afterWebhook.verificationState).toBe('UNVERIFIED');
+    expect(afterWebhook.activationStatus).toBe('NOT_REQUIRED');
+
+    const duplicate = await request(server)
+      .post('/api/v1/payments/initiate')
+      .set('Authorization', `Bearer ${employer.accessToken}`)
+      .send({ purpose: 'EMPLOYER_MEMBERSHIP', planId: plan.id })
+      .expect(409);
+    expect((duplicate.body as ErrorEnvelope).error.code).toBe('CONFLICT');
+
+    const membership = await request(server)
+      .get('/api/v1/employer/membership')
+      .set('Authorization', `Bearer ${employer.accessToken}`)
+      .expect(200);
+    expect(
+      (
+        membership.body as {
+          data: {
+            status: string;
+            canPay: boolean;
+            verificationState: string;
+            paymentStatus: string;
+          };
+        }
+      ).data,
+    ).toMatchObject({
+      status: 'ACTIVE',
+      canPay: false,
+      verificationState: 'UNVERIFIED',
+      paymentStatus: 'SUCCEEDED',
+    });
+
+    await request(server)
+      .get('/api/v1/employer/membership')
+      .set('Authorization', `Bearer ${employee.accessToken}`)
+      .expect(403);
+  });
+
+  it('does not activate employer membership on a failed Razorpay webhook', async () => {
+    const employer = await employerWithCompleteOrg(app, prisma, sms, 'fail');
+    const server = app.getHttpServer() as Server;
+    const plan = await prisma.membershipPlan.findFirstOrThrow({
+      where: { code: EMPLOYER_MEMBERSHIP_PLAN_CODE, isActive: true },
+    });
+    const initiated = await request(server)
+      .post('/api/v1/payments/initiate')
+      .set('Authorization', `Bearer ${employer.accessToken}`)
+      .send({ purpose: 'EMPLOYER_MEMBERSHIP', planId: plan.id })
+      .expect(201);
+    const paymentId = (initiated.body as InitiateBody).data.paymentId;
+    const orderId = String(
+      (initiated.body as InitiateBody).data.providerPayload.orderId,
+    );
+    const failed = {
+      event: 'payment.failed',
+      payload: {
+        payment: { entity: { id: 'pay_emp_fail', order_id: orderId } },
+      },
+    };
+    const raw = JSON.stringify(failed);
+    await request(server)
+      .post('/api/v1/payments/webhooks/razorpay')
+      .set('Content-Type', 'application/json')
+      .set(
+        'X-Razorpay-Signature',
+        razorpayWebhookSignature(
+          Buffer.from(raw),
+          process.env.RAZORPAY_WEBHOOK_SECRET ?? '',
+        ),
+      )
+      .set('X-Razorpay-Event-Id', 'evt_test_employer_failed')
+      .send(raw)
+      .expect(200);
+
+    const stored = await prisma.payment.findUniqueOrThrow({
+      where: { id: paymentId },
+    });
+    expect(stored.status).toBe('FAILED');
+    const org = await prisma.organization.findUniqueOrThrow({
+      where: { id: stored.organizationId as string },
+    });
+    expect(org.membershipStatus).toBe('INACTIVE');
+    expect(org.verificationState).toBe('UNVERIFIED');
+    expect(org.activationStatus).toBe('NOT_REQUIRED');
+  });
 });
+
+async function completeVerification(
+  server: Server,
+  accessToken: string,
+): Promise<void> {
+  const started = await request(server)
+    .post('/api/v1/verification/start')
+    .set('Authorization', `Bearer ${accessToken}`)
+    .send({})
+    .expect(201);
+  const verificationId = (started.body as { data: { verificationId: string } })
+    .data.verificationId;
+  await request(server)
+    .post('/api/v1/verification/mock/complete')
+    .set('Authorization', `Bearer ${accessToken}`)
+    .send({ verificationId, result: 'SUCCEEDED' })
+    .expect(200);
+}
 
 async function employerWithOrg(
   app: INestApplication,
@@ -303,6 +898,30 @@ async function employerWithOrg(
     .put('/api/v1/employer/organization')
     .set('Authorization', `Bearer ${session.accessToken}`)
     .send({ name: `P10-${label}-${session.userId}` })
+    .expect(200);
+  return session;
+}
+
+async function employerWithCompleteOrg(
+  app: INestApplication,
+  prisma: PrismaService,
+  sms: MockSmsProvider,
+  label: string,
+): Promise<{ accessToken: string; userId: string }> {
+  const session = await registerAndVerify(app, sms, uniquePhone(), 'EMPLOYER');
+  const district = await prisma.district.findFirst({
+    where: { isActive: true },
+    select: { id: true },
+  });
+  expect(district).not.toBeNull();
+  await request(app.getHttpServer() as Server)
+    .put('/api/v1/employer/organization')
+    .set('Authorization', `Bearer ${session.accessToken}`)
+    .send({
+      name: `P10-${label}-${session.userId}`,
+      districtId: district!.id,
+      contactPhone: uniquePhone(),
+    })
     .expect(200);
   return session;
 }

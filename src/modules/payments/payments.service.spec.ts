@@ -3,6 +3,10 @@ import { ConfigService } from '@nestjs/config';
 import { ErrorCode } from '../../common/constants/error-codes';
 import { PrismaService } from '../../database/prisma.service';
 import { StubPaymentProvider } from '../../integrations/payment/stub-payment.provider';
+import { RazorpayPaymentProvider } from '../../integrations/payment/razorpay-payment.provider';
+import { AuditService } from '../audit/audit.service';
+import { EmployerMembershipService } from '../employers/employer-membership.service';
+import { MembershipService } from '../membership/membership.service';
 import { PaymentsService } from './payments.service';
 
 const employer = {
@@ -29,6 +33,10 @@ describe('PaymentsService', () => {
         },
       } as unknown as ConfigService,
       new StubPaymentProvider(),
+      { isConfigured: () => false } as RazorpayPaymentProvider,
+      {} as MembershipService,
+      {} as EmployerMembershipService,
+      { append: jest.fn() } as unknown as AuditService,
     );
 
     try {

@@ -491,6 +491,19 @@ async function employerWithOrg(
     .set('Authorization', `Bearer ${session.accessToken}`)
     .send({ name: `P11-org-${session.userId}` })
     .expect(200);
+  const prisma = app.get(PrismaService);
+  const profile = await prisma.employerProfile.findUnique({
+    where: { userId: session.userId },
+    select: { organizationId: true },
+  });
+  expect(profile?.organizationId).toBeTruthy();
+  await prisma.organization.update({
+    where: { id: profile!.organizationId! },
+    data: {
+      membershipStatus: 'ACTIVE',
+      membershipActivatedAt: new Date(),
+    },
+  });
   return session;
 }
 

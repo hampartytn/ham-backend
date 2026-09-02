@@ -10,8 +10,23 @@ export const MEMBERSHIP_INFO_COPY_KEYS = [
 export function canJoinMembership(
   identityVerified: boolean,
   status: string | null,
+  membershipPaid: boolean,
 ): boolean {
-  return identityVerified && status !== 'JOINED';
+  return identityVerified && membershipPaid && status !== 'JOINED';
+}
+
+export function canPayMembership(
+  identityVerified: boolean,
+  status: string | null,
+  membershipPaid: boolean,
+  planActive: boolean,
+): boolean {
+  return (
+    identityVerified &&
+    planActive &&
+    !membershipPaid &&
+    status !== 'JOINED'
+  );
 }
 
 export function truncateConsentField(

@@ -163,6 +163,18 @@ export class EnvironmentVariables {
   @Min(1)
   PAYMENT_EMPLOYER_ACTIVATION_PAISE = 1;
 
+  @IsOptional()
+  @IsString()
+  RAZORPAY_KEY_ID?: string;
+
+  @IsOptional()
+  @IsString()
+  RAZORPAY_KEY_SECRET?: string;
+
+  @IsOptional()
+  @IsString()
+  RAZORPAY_WEBHOOK_SECRET?: string;
+
   @IsString()
   @IsNotEmpty()
   FILE_STORAGE_PROVIDER = 'local';
